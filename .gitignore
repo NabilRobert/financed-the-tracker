@@ -1,0 +1,28 @@
+# Private notes and handovers never go in the repo.
+private/
+backups/
+HANDOVER*.md
+*.local.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Database dumps, logs and real messages
+*.dump
+*.sql.gz
+*.log
+data/real/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
