@@ -326,6 +326,11 @@ def test_clean_text_lowers_and_collapses_whitespace() -> None:
     assert clean_text("  Makan\n\t25RB ") == "makan 25rb"
 
 
+@pytest.mark.parametrize("character", ["\x00", "\x07", "\ud800", "\u200b"])
+def test_clean_text_drops_what_postgres_cannot_store_or_nobody_can_see(character: str) -> None:
+    assert clean_text(f"makan{character} 25rb") == "makan 25rb"
+
+
 def test_no_float_is_used_to_read_money() -> None:
     tree = ast.parse(Path(amount_module.__file__).read_text(encoding="utf-8"))
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}

@@ -45,7 +45,7 @@ from tracker.parsing.keywords import (
 
 MAX_DESCRIPTION_CHARS: Final = 80  # PR1: the entry keeps a short note, not the message.
 
-_WORD_PATTERN: Final = re.compile("[a-z]+")
+WORD_PATTERN: Final = re.compile("[a-z]+")
 _GLUED_TIMES_PATTERN: Final = re.compile(r"(?<=[0-9])[x\u00d7](?=[0-9])")
 _FOREIGN_CURRENCY: Final = re.compile(FOREIGN_CURRENCY_PATTERN)
 _PER_ITEM: Final = re.compile(PER_ITEM_PATTERN)
@@ -197,7 +197,7 @@ def parse_message(text: str) -> ParsedEntry | AmbiguousEntry | None:
     else:
         return None
     description = _describe(cleaned, money)
-    words = _WORD_PATTERN.findall(description)
+    words = WORD_PATTERN.findall(description)
     direction = _read_direction(words, cleaned)
     category = _read_category(words, direction)
     if isinstance(verdict, Ambiguous):

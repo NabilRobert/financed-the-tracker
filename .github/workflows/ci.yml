@@ -1,5 +1,6 @@
 # Lint, types and tests on every push and pull request. No secrets, no model
 # calls and no network beyond installing the pinned tools, so it costs nothing.
+# TRACKER_REQUIRE_DB turns a missing test database from a skip into a failure.
 name: CI
 
 on:
@@ -13,6 +14,21 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # A throwaway server for the tests only, never real data.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55441:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TRACKER_REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

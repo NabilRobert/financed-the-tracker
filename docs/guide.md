@@ -1,7 +1,7 @@
 # Guide
 
-This guide explains the repo in plain English. It covers slice 1, which is only
-the parser. Later slices will add to it.
+This guide explains the repo in plain English. It covers the parser (slice 1)
+and the ledger (slice 2). Later slices will add to it.
 
 ## The flow: one message, start to finish
 
@@ -44,8 +44,68 @@ flowchart TD
 8. **Fill in the rest.** `_read_direction` and `_read_category` use the word
    lists in `tracker/parsing/keywords.py`, and `_describe` keeps the message
    without its amount: `makan`.
-9. **Return.** `ParsedEntry(25000, spending, "Makan", "makan")`. Nothing is
-   stored: this slice has no database.
+9. **Return.** `ParsedEntry(25000, spending, "Makan", "makan")`. The parser
+   stores nothing. The next section picks up from here.
+
+## The flow: from a parsed entry to the database
+
+Nothing calls this yet except the tests; from slice 3, the WhatsApp handler will.
+
+```mermaid
+flowchart TD
+    W["webhook names a person"] --> F["find_person_id"]
+    F --> T["person_transaction<br/>one person, one transaction"]
+    T --> I["INSERT inbound_message"]
+    I -->|message id already seen| N["None: do nothing"]
+    I -->|new| C["resolve_category"]
+    C --> E["INSERT entry"]
+    E --> B["record_budget_warning"]
+    B --> R["WrittenEntry, committed"]
+```
+
+1. **Find the person.** `tracker/ledger/people.py: find_person_id` turns the
+   webhook's id into a `person.id`. It calls a small database function, because
+   the app can't read the person table until a person is in scope.
+2. **Open a scope.** `tracker/ledger/scope.py: person_transaction` starts a
+   transaction and sets `tracker.person_id` for that transaction only. Every
+   ledger function takes the resulting `PersonScope`, so none can run without a
+   person.
+3. **Claim the message.** `tracker/ledger/entries.py: write_entry` inserts Meta's
+   message id. If it's already there, this is a repeat delivery, and the function
+   returns `None`.
+4. **Choose the category.** `tracker/ledger/categories.py: resolve_category`
+   checks the words this person taught it first, then uses the parser's category.
+5. **Write the entry.** Amount, direction, category and description, in the same
+   transaction as the message id. If anything fails, both roll back, so a retry
+   isn't mistaken for a repeat.
+6. **Check the budget.** `tracker/ledger/budgets.py: record_budget_warning` works
+   out what's used this month, in SQL. Inserting into `budget_warning` is what
+   makes each warning arrive once.
+7. **Commit, then reply.** The entry is safe before any message goes out.
+
+Undo is `entries.py: void_entry`. It sets `voided_at` and changes nothing else,
+and every total ignores voided entries.
+
+## How one person is kept from another's data
+
+There are two layers, so one forgotten filter doesn't expose anyone:
+
+1. **The code.** Every query has `person_id = :person_id`, from the scope.
+2. **The database.** Row-level security limits the `tracker_app` login to the
+   person set for the transaction. With no person set, every table looks empty.
+
+Two traps are handled in `migrations/versions/0001_ledger.py`:
+
+- **Foreign keys ignore row-level security.** So each link between people's
+  tables includes `person_id`: an entry can't point at someone else's category.
+- **A setting from a past transaction reads as `''`, not `NULL`.** So the
+  function reading it uses `NULLIF`, and a reused connection sees no rows
+  instead of an error.
+
+Row-level security catches a forgotten `WHERE`. It doesn't stop SQL injection,
+because the app may set the person itself. Bound parameters do that job.
+
+`tests/test_ledger_isolation.py` tests each layer without the other.
 
 ## Two results, one rule
 
@@ -69,6 +129,16 @@ costs one tap. A wrong amount costs trust in every total after it.
 - `tests/corpus/holdout.jsonl` is scored only as a whole, and the code is never
   tuned on it. [parser-accuracy.md](parser-accuracy.md) explains why.
 
+## How the ledger's checks were tested
+
+- **mutmut:** 910 mutants of `tracker/`; 902 caught. All 8 survivors are
+  equivalent: 6 only lower-case the SQL, `datetime.now(None)` still gives the
+  same instant, and `len(remainder) >= 3` can't differ, because 3 has returned.
+- **By hand:** mutmut can't touch the migration, so 49 protections were broken
+  one at a time: policies, grants, foreign keys, checks and each code filter.
+  Tests caught 48. The other, `e.person_id = b.person_id` in the budget query, is
+  equivalent, because a category has one owner. It stays so the index is used.
+
 ## Glossary
 
 | Word | Meaning | Where |
@@ -87,6 +157,13 @@ costs one tap. A wrong amount costs trust in every total after it.
 | **Coverage** | Of the messages about money, the share the rules handle with no model | `CorpusScore.coverage` |
 | **Wrong amount** | The rules wrote a different number from the label. The target is 0 | `CorpusScore.wrong_amounts` |
 | **False write** | The rules wrote something that should have been a question | `CorpusScore.false_writes` |
+| **Scope** | One transaction limited to one person | `PersonScope` |
+| **Row-level security (RLS)** | Postgres hides rows by a rule on the table, whatever the query says | `0001_ledger.py` |
+| **BSUID** | Meta's id for a person, which stays put when the phone number changes | `person.bsuid` |
+| **Void** | Undo: mark the entry, keep the row | `entries.py: void_entry` |
+| **Repeat delivery** | Meta sends the same message twice. The unique message id makes the second do nothing | `inbound_message` |
+| **Taught word** | A word a person linked to a category with `kategori transport` | `category_keyword` |
+| **Period** | A date range, from a start up to but not including an end | `summaries.py: Period` |
 | **Mutation check** | Break the code on purpose and confirm a test fails | `[tool.mutmut]` in `pyproject.toml` |
 
 ## Where to change things
@@ -100,6 +177,10 @@ costs one tap. A wrong amount costs trust in every total after it.
 | Add a unit | `UNIT_MULTIPLIERS` in `amount.py` |
 | Change a limit | `MIN_UNITLESS_RUPIAH` or `MAX_ENTRY_RUPIAH` in `amount.py` |
 | Add a reason not to write | `NOT_A_TRANSACTION_PATTERN` in `keywords.py` |
+| Change the schema | A new file in `migrations/versions/`. Never edit a migration that has run |
+| Add a table | A migration, with `person_id`, row-level security and the least grants; add it to `PERSON_TABLES` in `tests/test_ledger_isolation.py` |
+| Change the starter categories | `SPENDING_KEYWORDS` in `keywords.py`; a new person picks them up from `people.py: STARTER_CATEGORIES` |
+| Change the warning levels | `WARNING_PERCENTS` in `budgets.py`, and the check on `budget_warning` |
 | Add a corpus case | A line in `dev.jsonl`, following `tests/corpus/README.md`. Never edit `holdout.jsonl` to make a score better |
 
 ## Known limits
@@ -115,5 +196,11 @@ costs one tap. A wrong amount costs trust in every total after it.
   it, and undo is one tap.
 - **`cepek` always asks.** Some speakers mean Rp100, others Rp100,000, so the
   bot offers both. It's one line in `AMBIGUOUS_SPELLED_AMOUNTS`.
-- **L6 isn't here.** Asking before entries above Rp10,000,000 belongs to the
-  write path, in a later slice.
+- **L6 isn't here.** Asking before entries above Rp10,000,000 needs a pending
+  entry, so it comes with buttons in slice 3.
+- **Consent isn't checked yet.** I4 arrives with the consent flow in slice 3, so
+  nothing may call `write_entry` before that.
+- **Deleting a person isn't here.** `hapus data saya` is slice 4, which needs a
+  way past "the app can delete nothing".
+- **Two entries at the same moment can miss a warning.** Neither sees the other
+  before it commits. The next entry in that category gives the warning.

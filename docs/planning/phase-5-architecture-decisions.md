@@ -396,6 +396,30 @@ watch.
 - *Serverless:* a cold start on every message, and it moves financial data
   off Arthur's server.
 
+## ADR-019: How the code reaches the database
+
+**Decision (slice 2):**
+- SQLAlchemy 2 in async mode with asyncpg, as Juku does. Queries are written as
+  SQL through `text()`, and the migrations are the schema.
+- Two logins: `tracker_owner` owns the tables, and `tracker_app` runs the app.
+  The monthly job's login comes in slice 6.
+- Every ledger function takes a `PersonScope`, so none can run without a person.
+- `tracker_app` has no `DELETE` anywhere, and can update only `voided_at` and
+  `category_id` on an entry, so L3 holds even if the app has a bug.
+- A webhook's BSUID is looked up through one `SECURITY DEFINER` function, so the
+  app never reads the person table without a person in scope.
+
+**Reused:** Juku's Alembic environment and throwaway test database, adapted. It
+has no row-level security to reuse, and its test kit is tied to its own packages.
+
+**Rejected:**
+- *SQLAlchemy ORM models:* a second copy of the schema, and the queries here are
+  short and must stay visible for the isolation review.
+- *psycopg, synchronous:* simpler, but Juku's stack is async, and pywa's handlers
+  can be either. Keeping one stack across the repos matters more.
+- *`FORCE ROW LEVEL SECURITY` on the owner:* adding a person is the owner's job
+  and has to see past the rules.
+
 ## Decisions
 
 | # | Decision | Rejected | Status |
@@ -418,6 +442,7 @@ watch.
 | 016 | MCP-backbone and gateway after v1 | Adding them now | **Accepted** |
 | 017 | Test number, then a dedicated SIM | Personal number, Business app number | **Accepted** |
 | 018 | One capped container, existing Postgres, after Juku's deploy | New server, serverless | **Accepted** |
+| 019 | Async SQLAlchemy with `text()`, two logins, a scope on every call | ORM models, psycopg, `FORCE` RLS | **Made in slice 2** |
 
 ## The first slice
 

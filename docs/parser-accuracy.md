@@ -6,9 +6,14 @@ end of every run, so they can't drift from this page without showing up.
 ## Result
 
 The held-out set was scored once, on commit `16a324b`, with the code frozen
-first. One change came later: `cepek` now asks instead of reading as Rp100,
-because speakers disagree on it. No held-out message contains `cepek`, so these
-held-out figures stand, and the set wasn't rescored for it.
+first. Two changes came later, and neither was found on the corpus:
+
+- `cepek` now asks instead of reading as Rp100, because speakers disagree on it.
+  No held-out message contains `cepek`.
+- `clean_text` now drops control characters, because a NUL byte crashed the
+  database write.
+
+The figures stand. CI still prints them on every run, and they haven't moved.
 
 | Measure | Held-out (100) | Dev (205) | Target |
 |---|---|---|---|
