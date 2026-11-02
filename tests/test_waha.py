@@ -115,6 +115,7 @@ async def test_sending_marks_the_chat_seen_then_replies_with_previews_off() -> N
     await gateway_for(waha).send_text(LID, "halo")
     paths = [request.url.path for request in waha.requests]
     assert paths == ["/api/sendSeen", "/api/sendText"]
+    assert json.loads(waha.requests[0].content) == {"session": SESSION, "chatId": LID}
     assert json.loads(waha.requests[1].content) == {
         "session": SESSION,
         "chatId": LID,

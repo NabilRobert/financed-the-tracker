@@ -110,6 +110,13 @@ async def test_batal_on_a_question_writes_nothing(owner_engine: AsyncEngine, bot
     assert await stored_amounts(owner_engine, member) == []
 
 
+async def test_ya_after_batal_writes_nothing(owner_engine: AsyncEngine, bot: Bot, member: str) -> None:
+    await bot.say(member, "mau beli hp 3jt")
+    await bot.say(member, "batal")
+    await bot.say(member, "ya")
+    assert await stored_amounts(owner_engine, member) == []
+
+
 async def test_batal_on_a_question_does_not_undo_the_entry_before_it(
     owner_engine: AsyncEngine, bot: Bot, member: str
 ) -> None:
