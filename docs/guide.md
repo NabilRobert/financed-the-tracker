@@ -86,6 +86,21 @@ flowchart TD
 Undo is `entries.py: void_entry`. It sets `voided_at` and changes nothing else,
 and every total ignores voided entries.
 
+## Security comes first
+
+This holds people's financial records, so when security conflicts with speed,
+features or cost, security wins. That's Arthur's decision, recorded in ADR-020.
+
+- [threat-model.md](planning/threat-model.md) lists every threat, its control,
+  its proof, and the slice that owns it.
+- [The real-data gate](planning/slice-plan.md#the-real-data-gate) must pass before
+  any real person's data, Arthur's included, enters the system.
+- CI scans all history for secrets (gitleaks) and checks every locked dependency
+  for known holes (`uv audit`).
+
+To add something that touches people's data, find its threat first. If the threat
+isn't there, add it. If a control has no named threat, it doesn't belong.
+
 ## How one person is kept from another's data
 
 There are two layers, so one forgotten filter doesn't expose anyone:
@@ -164,6 +179,11 @@ costs one tap. A wrong amount costs trust in every total after it.
 | **Repeat delivery** | Meta sends the same message twice. The unique message id makes the second do nothing | `inbound_message` |
 | **Taught word** | A word a person linked to a category with `kategori transport` | `category_keyword` |
 | **Period** | A date range, from a start up to but not including an end | `summaries.py: Period` |
+| **Threat model** | The list of what could go wrong, and what stops each thing | `docs/planning/threat-model.md` |
+| **Real-data gate** | The checklist that must pass before any real person's data enters the system | `docs/planning/slice-plan.md` |
+| **Fail closed** | When a check can't run, refuse rather than let the request through | Slice 3's webhook |
+| **Secret scan** | A search of every commit for keys and tokens | gitleaks in `ci.yml` |
+| **Dependency audit** | A check of every locked package against known vulnerabilities | `uv audit` in `ci.yml` |
 | **Mutation check** | Break the code on purpose and confirm a test fails | `[tool.mutmut]` in `pyproject.toml` |
 
 ## Where to change things
@@ -181,6 +201,7 @@ costs one tap. A wrong amount costs trust in every total after it.
 | Add a table | A migration, with `person_id`, row-level security and the least grants; add it to `PERSON_TABLES` in `tests/test_ledger_isolation.py` |
 | Change the starter categories | `SPENDING_KEYWORDS` in `keywords.py`; a new person picks them up from `people.py: STARTER_CATEGORIES` |
 | Change the warning levels | `WARNING_PERCENTS` in `budgets.py`, and the check on `budget_warning` |
+| Add a threat or a control | A row in `docs/planning/threat-model.md`, with its proof and owning slice |
 | Add a corpus case | A line in `dev.jsonl`, following `tests/corpus/README.md`. Never edit `holdout.jsonl` to make a score better |
 
 ## Known limits
