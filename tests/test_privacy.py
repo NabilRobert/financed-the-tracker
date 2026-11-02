@@ -249,7 +249,7 @@ def test_ordinary_money_is_not_mistaken_for_a_card(message: str) -> None:
 
 
 def test_digits_in_small_groups_are_counted_without_their_gaps() -> None:
-    assert looks_sensitive("123 456 789 012 345 678 9012")
+    assert looks_sensitive("1234 5678 9012 3456 789")
     assert looks_sensitive("kartu 123 456 789 012 345")
 
 
