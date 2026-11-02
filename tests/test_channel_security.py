@@ -41,7 +41,7 @@ from tracker.ledger.people import create_person, set_suspended
 from tracker.serve import BIND_PORT, server_config
 
 SENTINEL = "zzsentinelzz"
-SENTINEL_PHONE = "628129876543"
+SENTINEL_PHONE = "628120000098"
 SENTINEL_AMOUNT = "98.765"
 # Change this only together with CONSENT_NOTICE_VERSION: people agreed to the old text.
 PINNED_NOTICE_SHA256 = "b3a3a02f7aacf2d56e921179bf81c1bb6b6083fb4f19b293c17af4aedefca56b"
