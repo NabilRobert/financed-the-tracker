@@ -69,7 +69,7 @@ slice 2's isolation, least grants and no-delete rules (T3, T7 to T9, T20).
 
 | Slice | Security done-when |
 |---|---|
-| **3** | Signature checks fail closed: no app secret stops startup, and every bad signature gets 401 or 403 and writes nothing (T1, T2). Unknown senders get nothing (T4). Rate limits work (T5). No token in logs (T6). Forged button payloads fail (T10). Suspension works (T11). Recycled numbers get nothing (T12). No-content tests pass on every path, failures included (T14). Consent is recorded with its notice version, and nothing is stored before it (T17). The phone number is dropped once the BSUID is known (T21). The notice's text is pinned (T18). Only invented messages go through the test number |
+| **3** | Signature checks fail closed: no secret stops startup, and every bad signature gets 401 or 403 and writes nothing (T1, T2). Unknown senders get nothing (T4). Rate limits work (T5). No secret in a URL or a log (T6). Typed answers can't reach an old question or an older entry (T10). Suspension works (T11). No-content tests pass on every path, failures included (T14). Consent is recorded with its notice version, and nothing is stored before it (T17). The notice warns of the unofficial channel, and its text is pinned (T18). The number is dropped once a LID is known (T21). WAHA is pinned by digest and bound to loopback, with its dashboard off (T36, T38). A public `WAHA_URL` stops startup (T36). Only replies are sent (T41). Own messages and groups are dropped (T42). `tracker export` works with no channel (T40). Only invented messages go through the spare number |
 | **4** | Card numbers are refused before any write (T13). No-content tests cover spans and alerts (T14). The purge job meets PR6 (T15). `hapus data saya` leaves zero rows through one narrow database function, and needs a typed confirmation (T11, T16). `ekspor` carries only that person's data (T19) |
 | **5** | Non-root, capped containers with no owner login in the app's environment (T21). Postgres and WAHA can't be reached from outside, shown by a probe (T22, T36). Secret rotation rehearsed (T23). WAHA's session files are owner-only and absent from backups (T35). WAHA's running key is checked (T37). Backups are encrypted, and a restore is tested and timed (T25, T26). A deletion survives a restore (T27). Replay survives a restart (T3). A stopped session alerts (T43). Then the gate |
 | **6** | The monthly summary stays a reply, never a message the bot starts (T41). The gate's checks are re-run on the deployed commit before the first invitation, and each invited person's consent is recorded |
@@ -109,7 +109,7 @@ time.
 
 ## Slice 1 in detail: the first slice
 
-**Scope:** pure Python, no I/O. It needs nothing from Meta, Sumopod or the
+**Scope:** pure Python, no I/O. It needs nothing from WhatsApp, Sumopod or the
 server, so it can start the moment Arthur OKs the plan.
 
 **Delivers:**

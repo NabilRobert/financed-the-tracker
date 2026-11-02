@@ -75,7 +75,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a typed confirmation. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`. The tap on `hapus` comes with `hapus` in slice 4 | 3, 4 | Part done |
+| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a typed confirmation. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`. The confirmation for `hapus` comes with `hapus` in slice 4 | 3, 4 | Part done |
 | T12 | A recycled number reaches an old ledger | Keyed on the LID when WAHA gives one, so a new owner of a number is a new id. **A person known only by `@c.us` keeps this risk,** because that id is the number | `test_a_recycled_number_with_a_new_id_reaches_nothing`. The live check shows how often a LID is available | 3 | Part done |
 
 ### Sensitive content
@@ -88,7 +88,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T16 | A person leaves and their data stays | `hapus data saya` removes every row (I6). The app login can't delete, so this is one narrow database function | Test: zero rows in every table, and no other person's rows touched | 4 | Planned |
 | T17 | Data is stored before consent | Nothing is written before **setuju**, and only for a notice this person was sent, with the time and version recorded (I4, I7) | `test_a_person_who_has_not_agreed_gets_the_notice_and_nothing_is_stored`, `test_setuju_agrees_only_to_a_notice_the_person_was_sent` | 3 | Done |
 
-### Meta
+### WhatsApp
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
