@@ -27,7 +27,7 @@ after the first two weeks. If he doesn't, the friction story is wrong.
 - A reviewer can't yet see how Arthur handles money: exact arithmetic,
   duplicate deliveries, undo, and a model that isn't trusted.
 - Everything else in the portfolio is a web app or a backend. None runs on
-  a messaging channel, with its terms, prices and delivery failures.
+  a messaging channel, with its terms and delivery failures.
 
 ## Users
 
@@ -47,13 +47,13 @@ The idea is common, so the idea isn't what's being shown. What is:
    integer, and a person confirms before anything is written.
 2. **Money is exact and the history can't quietly change.** Integer rupiah,
    no floats. Undo marks an entry void instead of erasing it. A duplicate
-   delivery from Meta can't log an entry twice.
+   delivery can't log an entry twice.
 3. **Accuracy is measured, not claimed.** A labelled corpus of Indonesian
    messages gives the rules' coverage and the count of wrong amounts, with
    a held-out set, in CI, at $0.
-4. **The terms were read.** It uses Meta's official API, after checking
-   Meta's own terms and prices. Two popular agent frameworks were rejected
-   because of what their own docs say about how they reach WhatsApp.
+4. **The risk is stated.** It runs on WAHA, an unofficial client, by Arthur's decision
+   (ADR-022). WhatsApp's terms and the ban risk were read and written down, and the
+   ledger is built to outlive the channel.
 
 ## Goals and how they're measured
 
@@ -65,13 +65,13 @@ The idea is common, so the idea isn't what's being shown. What is:
 | G4 | No one sees anyone else's data | Every cross-user attempt returns nothing, at the database level too | Isolation suite |
 | G5 | Summaries are right to the rupiah | Exact match against fixtures | Fixture tests, mutation-checked |
 | G6 | It fits the small shared server | App under its memory cap (ADR-018) | Measured, then published |
-| G7 | It costs next to nothing | Rp0 from the model in v1; Meta costs within the cap (ADR-012) | Monthly count from delivery records |
+| G7 | It costs next to nothing | Rp0 from the model in v1, and nothing per message (ADR-022) | The bills: only the SIM |
 | G8 | Arthur keeps using it | Logs on at least 20 of the first 30 days | Rows, Arthur's only |
 | G9 | No real data before it's safe | No real person's data before the [real-data gate](slice-plan.md#the-real-data-gate) passes | The gate's checklist, signed by Arthur |
 
 ## Non-goals (v1)
 
-- **Photo receipts.** Each photo would go to Meta and a model provider, and
+- **Photo receipts.** Each photo would be stored and could reach a model provider, and
   receipts can show card details (ADR-010). v2 at the earliest.
 - **Bank or e-wallet links, and importing statements.**
 - **Moving money, paying bills, or any financial advice.** It records what
@@ -88,7 +88,7 @@ The idea is common, so the idea isn't what's being shown. What is:
 1. **Users:** Arthur plus a few invited people.
 2. **v1 scope:** text logging with undo; categories; summaries on request;
    budgets with a monthly push.
-3. **Framework:** `pywa` on Meta's official Cloud API, with FastAPI,
+3. **Framework:** WAHA (ADR-022, replacing `pywa` on Meta's Cloud API), with FastAPI,
    PydanticAI for the fallback, and Postgres with SQLAlchemy 2 and Alembic.
 4. **Security comes first (2026-11-02):** this is people's financial data, so
    when security conflicts with speed, features or cost, security wins (ADR-020).
@@ -98,10 +98,8 @@ Arthur accepted ADRs 005 to 018 as recommended on 2026-11-02.
 ## Open questions
 
 See the end of [Phase 5](phase-5-architecture-decisions.md#open-questions).
-The two that could change the design:
-- whether financial entries count as "Prohibited Information" under
-  section 4.2 of Meta's terms;
-- whether Meta accepts an individual, not a company, as the business.
+The one that could stop the project: whether to accept that using WAHA breaks
+WhatsApp's terms. It replaces the question about section 4.2 of Meta's terms.
 
 ## Cost of doing nothing
 

@@ -7,8 +7,13 @@ proved. It replaces the threat table in Phase 2.
 
 **Status, 2026-11-02:** nothing is deployed, and no real person's data exists
 anywhere. "Planned" below means not built yet, not a live gap. "Done" for the
-channel means proved with signed fixtures. No live Meta message has passed through
-it yet ([what's still unverified](slice-plan.md#the-live-check)).
+channel means proved with signed fixtures. No live WhatsApp message has passed
+through it yet ([what's still unverified](slice-plan.md#the-live-check)).
+
+**The channel is WAHA, an unofficial client, by Arthur's decision
+([ADR-022](phase-5-architecture-decisions.md#adr-022-waha-replaces-metas-cloud-api)).**
+Using it breaks WhatsApp's terms. That can't be engineered away, so it's a gate, not a
+control.
 
 **A rule for this public page:** it never holds a server's address or a finding
 that is live and unfixed. Findings stay in `private/` until they are fixed.
@@ -18,11 +23,12 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | Asset | Why it matters | Where it lives |
 |---|---|---|
 | **Entries and budgets** | Personal financial data, a specific category under UU PDP | Postgres, backups |
-| **Message text** | Says more than the entry keeps | Meta; the app's memory while handling it; never stored, except PR5 |
-| **Identity** | BSUID and phone number link the money to a person | Postgres, backups |
+| **Message text** | Says more than the entry keeps | WAHA and the app's memory while handling it; never stored, except PR5 |
+| **Identity** | A WhatsApp id or phone number links the money to a person | Postgres, backups |
 | **Consent records** | The proof of what each person agreed to | Postgres, backups |
-| **Secrets** | App secret, access token, database logins, backup key | The server's `.env`; the backup key elsewhere |
-| **Service and budget** | A flood could cost money, or lose records | Server, Meta's bill |
+| **The WhatsApp session** | As sensitive as the account: whoever holds these files can read and send as the bot's number | WAHA's volume, and nowhere else |
+| **Secrets** | Webhook secret, WAHA API key, database logins, backup key | The server's `.env`; the backup key elsewhere |
+| **Service** | A flood, a ban or a protocol change could stop the bot | Server, WhatsApp |
 
 ## Who from
 
@@ -31,8 +37,8 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | **A stranger on the internet** | The webhook URL | Nothing without a valid signature |
 | **Another invited person** | Their own ledger | Never anyone else's |
 | **Someone holding a person's phone** | That person's chat | Only that person's data; Arthur can suspend it |
-| **Meta** | All message text, in the clear | **No technical limit.** Terms, consent and sending less |
-| **An attacker on the server** | With the app's login: everyone's entries. With the host: everything | **Limits damage, can't prevent it.** No edits or deletes through the app's login, and backups can't be opened from the server |
+| **WhatsApp (Meta)** | Who messages whom, and when. It can ban the number at any time. WhatsApp describes chats as end-to-end encrypted, which we haven't verified | **No technical limit.** Reply only, low volume, and a ledger that outlives the number |
+| **An attacker on the server** | With the app's login: everyone's entries. With WAHA's files or API: the bot's account and live messages. With the host: everything | **Limits damage, can't prevent it.** No edits or deletes through the app's login, and backups can't be opened from the server |
 | **A thief with a backup** | An encrypted file | Nothing without the key, which isn't with the backups or on the server |
 | **A model provider, if ever turned on** | One message, no name or number | Off in v1, and gated |
 | **A poisoned or vulnerable dependency** | Whatever the app can reach | Pinned, audited, few dependencies |
@@ -47,15 +53,14 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T1 | A forged webhook adds entries | Signature check. Startup refuses to run with no app secret, because pywa would otherwise switch the check off with only a warning (R1, R2) | `tests/test_channel_webhook.py`: every missing, wrong, bare and body-swapped signature gets 401 or 403 and writes nothing; every missing or placeholder secret stops startup | 3 | Done |
-| T2 | A signature is guessed by timing | A constant-time comparison | Spike 1: pywa uses `compare_digest`. Ours does too, on bytes, because on non-ASCII text it raises | 3 | Done |
-| T3 | A captured webhook is replayed, or Meta repeats one | Unique message id in the database (L5) | `test_a_repeat_delivery_adds_nothing`, a simultaneous version, and one after undo. A restart test in slice 5 | 2 | Done |
-| T4 | A stranger uses the bot | Allow-list. Unknown senders get no reply and leave only a count (I3) | `test_a_stranger_gets_no_reply_and_leaves_only_a_count` | 3 | Done |
-| T5 | A flood costs money or starves the server | Rate limits (R6), a body-size limit, and the reply cap (E3) | `test_a_flood_stops_at_the_limit_and_costs_one_notice`; the app caps the body itself. The reply cap and Caddy's limit come later | 3, 4 | Part done |
-| T6 | Meta's verify token leaks through a URL log | Access logs off or scrubbed on the webhook path | `test_the_real_server_writes_no_token_to_its_logs`. Caddy's logs are checked in slice 5 | 3 | Part done |
+| T1 | A forged webhook adds entries | HMAC-SHA-512 over the raw body. Startup refuses to run without a real secret, and an unsigned or wrongly signed request reaches no code (R1, R2) | `tests/test_channel_webhook.py`: every missing, wrong, unknown-algorithm and body-swapped signature gets 401 or 403 and writes nothing; every missing or placeholder secret stops startup | 3 | Done |
+| T2 | A signature is guessed by timing | A constant-time comparison | `_is_signed` uses `compare_digest` on bytes, because on non-ASCII text it raises | 3 | Done |
+| T3 | A captured webhook is replayed, or WAHA repeats one | Unique message id in the database (L5). WAHA's timestamp header isn't signed, so age can't be trusted | `test_a_repeat_delivery_adds_nothing`, a simultaneous version, and one after undo. A restart test in slice 5 | 2 | Done |
+| T4 | A stranger uses the bot | Allow-list. Unknown senders get no reply and leave only a count (I3) | `test_a_stranger_gets_no_reply_and_leaves_only_a_count`, and the same for a sender with no resolvable id | 3 | Done |
+| T5 | A flood costs money or starves the server | Rate limits (R6) and a body-size limit in the app; Caddy's limit in slice 5 | `test_a_flood_stops_at_the_limit_and_costs_one_notice` | 3, 5 | Part done |
+| T6 | A secret reaches a URL log | WAHA's key goes in a header, never a URL. Access logs stay off | `test_the_server_keeps_no_access_log`, `test_the_api_key_travels_in_a_header_only` | 3 | Done |
 
-| T33 | A webhook carrying several messages loses all but the first, or credits one to the wrong person | Messages are split before dispatch, and each goes to the sender whose real id matches. No match fails the webhook rather than guessing | `test_every_message_in_a_batch_reaches_its_own_sender`, `test_two_people_with_no_phone_numbers_are_not_the_same_person` | 3 | Done |
-| T34 | A failed write looks like success, so the message is lost | Our routes, not pywa's: a failure answers 500 and Meta retries. pywa's duplicate cache is off, or it would swallow the retry | `test_a_failed_handler_answers_500_so_meta_retries_and_the_retry_works` | 3 | Done |
+| T34 | A failed write looks like success, so the message is lost | A failure answers 500, so WAHA retries | `test_a_failed_handler_answers_500_so_the_retry_works` | 3 | Done |
 
 ### Between people
 
@@ -64,14 +69,14 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T7 | One person reads or changes another's data | Row-level security and code filters, each tested without the other (ADR-009) | `tests/test_ledger_isolation.py`, mutation-checked | 2 | Done |
 | T8 | A foreign key crosses people, since keys ignore row-level security | Every link carries `person_id` | `test_every_link_between_peoples_tables_carries_person_id` | 2 | Done |
 | T9 | A new table forgets row-level security | A test fails on any table without it | `test_every_table_in_the_schema_has_row_level_security` | 2 | Done |
-| T10 | A tapped button acts on someone else's entry | The sender comes from the signed webhook, and the entry is checked against it (L4, I1) | `test_a_tap_cannot_undo_another_persons_entry`, `test_a_forged_payload_does_nothing_and_breaks_nothing` | 2, 3 | Done |
+| T10 | A typed answer acts on someone else's entry or an old question | Answers carry no id: they act only on the sender's own newest entry or open question. A new entry closes any open question | `test_batal_never_reaches_an_older_entry`, `test_a_late_ya_cannot_answer_an_old_question` | 2, 3 | Done |
 
 ### Someone holding the phone
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a confirming tap. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`. The tap on `hapus` comes with `hapus` in slice 4 | 3, 4 | Part done |
-| T12 | A recycled number reaches an old ledger | Keyed on BSUID, not the number (ADR-008), with number changes taken from Meta's system message | `test_a_recycled_number_with_a_new_id_reaches_nothing`, `test_a_number_change_cannot_take_over_another_persons_id` | 3 | Done |
+| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a typed confirmation. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`. The tap on `hapus` comes with `hapus` in slice 4 | 3, 4 | Part done |
+| T12 | A recycled number reaches an old ledger | Keyed on the LID when WAHA gives one, so a new owner of a number is a new id. **A person known only by `@c.us` keeps this risk,** because that id is the number | `test_a_recycled_number_with_a_new_id_reaches_nothing`. The live check shows how often a LID is available | 3 | Part done |
 
 ### Sensitive content
 
@@ -81,26 +86,41 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T14 | Message text, names, numbers or amounts reach logs, spans or alerts | No content by rule (PR2). The database engine runs with `hide_parameters`, so an error can't print an amount. Failure paths log an error type only | `test_no_path_logs_message_text_numbers_or_ids`, failures included. Spans and alerts come in slice 4 | 3, 4 | Part done |
 | T15 | Data is kept forever | The retention table (PR6) and a purge job | Tests: expired rows are gone after the job runs | 4 | Planned |
 | T16 | A person leaves and their data stays | `hapus data saya` removes every row (I6). The app login can't delete, so this is one narrow database function | Test: zero rows in every table, and no other person's rows touched | 4 | Planned |
-| T17 | Data is stored before consent | Nothing is written before **Setuju**, with the time and notice version recorded (I4, I7) | `test_a_person_who_has_not_agreed_gets_the_notice_and_nothing_is_stored`, `test_a_button_from_an_older_notice_records_nothing_and_shows_this_one` | 3 | Done |
+| T17 | Data is stored before consent | Nothing is written before **setuju**, and only for a notice this person was sent, with the time and version recorded (I4, I7) | `test_a_person_who_has_not_agreed_gets_the_notice_and_nothing_is_stored`, `test_setuju_agrees_only_to_a_notice_the_person_was_sent` | 3 | Done |
 
 ### Meta
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T18 | Meta reads everything, and keeps it up to 30 days | **Can't be prevented.** Consent notice, no photos, card refusal, local storage if available (ADR-010) | `test_the_notice_cannot_change_without_a_new_version`. Spike 4 still answers local storage | 3 | Part done |
-| T19 | The monthly push and `ekspor` send a person's numbers through Meta | Only their own data. The template carries a total and nothing else, and both are named in the notice | Test of the template's fields | 4, 6 | Planned |
+| T18 | WhatsApp and Meta see who messages whom, and could end the service | **Can't be prevented.** The consent notice says so, and that this is an unofficial channel. No photos, and card refusal | `test_the_notice_cannot_change_without_a_new_version`, `test_the_notice_states_what_a_person_must_know` | 3 | Done |
+| T19 | `ekspor` sends a person's numbers through WhatsApp | Only their own data, and the notice says what passes through | Test in slice 4 | 4 | Planned |
 
-Section 4.2 of Meta's terms stays open, and still gates real use.
+**WhatsApp's terms replace section 4.2:** is it acceptable to break them, to hold
+people's financial records on this channel? It stays open, and still gates real use.
 
 ### The server and its secrets
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
 | T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says` | 2 | Done |
-| T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: a non-root, capped container with no owner login in its environment; little data kept, and the number is dropped once the BSUID is known. The rest is accepted | `test_the_first_message_links_the_bsuid_and_drops_the_number`. Checks in slice 5: the container's user and environment | 3, 5 | Part done |
-| T22 | Postgres is reachable from outside, or a login is stolen | Not published to the internet. One login per job, with the least grants (ADR-009) | Least grants are tested. An outside probe in slice 5. The monthly job's own login comes in slice 6 | 2, 5, 6 | Part done |
-| T23 | The access token or app secret is stolen | Least scopes, `.env` readable only by the app, and a written rotation steps | Rotation rehearsed once before the gate | 5 | Planned |
+| T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: a non-root, capped container with no owner login in its environment; little data kept, and the number is dropped once a LID is known. The rest is accepted | `test_the_first_message_links_the_bsuid_and_drops_the_number`. Checks in slice 5: the container's user and environment | 3, 5 | Part done |
+| T22 | Postgres is reachable from outside, or a login is stolen | Not published to the internet. One login per job, with the least grants (ADR-009) | Least grants are tested. An outside probe in slice 5 | 2, 5 | Part done |
+| T23 | The webhook secret or WAHA's API key is stolen | Least reach: WAHA is never public. `.env` readable only by the app, and written rotation steps | Rotation rehearsed once before the gate | 5 | Planned |
 | T24 | The server's host is compromised | The server's hardening is a prerequisite (P4), owned by the server work, not this repo | Part of the gate | 5 | Planned |
+
+### WAHA and the account
+
+| # | Threat | Control | Proof | Slice | Status |
+|---|---|---|---|---|---|
+| T35 | WAHA's session files are stolen, handing over the account | Treated as the account itself: one volume, owner-only, never in the repo, and **left out of backups**, because re-linking is cheap and a stolen backup must not carry the account. Assumed plaintext | `test_waha_runs_on_a_pinned_image_with_nothing_public`, the ignore rules. Permissions and backup contents checked in slice 5 | 3, 5 | Part done |
+| T36 | WAHA's API or dashboard is reachable from outside. WAHA reported bots hijacking exposed sessions in April 2025 | Bound to loopback, with the dashboard and Swagger off. The app refuses a public `WAHA_URL`. Caddy serves only the tracker's webhook, if anything | `test_waha_runs_on_a_pinned_image_with_nothing_public`, `test_a_public_waha_url_stops_startup`. An outside probe in slice 5 | 3, 5 | Part done |
+| T37 | WAHA runs with no API key or a weak one | A hashed `WAHA_API_KEY` in its environment, and a required key in ours | `test_the_app_refuses_to_start_without_each_setting`. Checked against the running image in the live check | 3, 5 | Part done |
+| T38 | A new WAHA image changes behaviour or carries something hostile | Pinned by digest. An upgrade is a reviewed change, tested on the spare number first | `test_waha_runs_on_a_pinned_image_with_nothing_public` | 3 | Done |
+| T39 | A ban takes Arthur's own WhatsApp with it | A dedicated SIM, never his personal number. Written into the gate | The gate | 5 | Planned |
+| T40 | The number is banned, or WhatsApp stops the client, and records seem lost | The ledger lives in Postgres and never needs WhatsApp. `tracker export` works with WAHA stopped. A restore test proves it | `test_the_export_needs_no_channel`, then the gate | 3, 5 | Part done |
+| T41 | The bot is used for bulk or unsolicited messages, which also speeds a ban | Reply only: the send path is reached only from an inbound message from a known, consenting person. No broadcast exists | `test_nothing_sends_except_a_reply_to_an_inbound_message` | 3 | Done |
+| T42 | The bot talks to itself in a loop, or replies in a group | Messages from its own account, groups, broadcasts and channels are dropped | `test_the_bots_own_messages_are_ignored`, `test_only_direct_chats_reach_the_bot` | 3 | Done |
+| T43 | A WhatsApp change breaks WAHA, so messages silently stop | The session's status webhook logs and alerts a stopped session (E3). The dead-man alert covers the rest | `test_a_stopped_session_is_logged`, then slice 5's alert | 3, 5 | Part done |
 
 ### Backups
 
@@ -132,14 +152,17 @@ nothing to steal. That changes if CI ever deploys.
 
 Each of these is stated plainly in the consent notice or here:
 
-- **Meta can read every message.** WhatsApp's Cloud API isn't end-to-end
-  encrypted to this app.
+- **This breaks WhatsApp's terms.** The number can be banned without warning, and the
+  notice says so. Records survive it.
+- **WhatsApp sees who messages whom, and when.**
+- **Messages arrive readable at Arthur's server,** where WAHA and the app handle them.
 - **Arthur can read the database.** There is no technical way to stop an
   operator, so the notice says so.
 - **If the running app is taken over, entries can be read.** Encrypting fields
   wouldn't help, because the key would sit on the same server.
 - **A person's phone is the only login.** Whoever holds it unlocked has their
   ledger.
+- **Someone with WAHA's session files is the bot's account** until it's unlinked.
 
 ## Independent review
 
