@@ -17,13 +17,23 @@ from sqlalchemy.pool import NullPool
 
 from tracker.ledger.budgets import BudgetUse, list_budgets, set_budget
 from tracker.ledger.categories import CategoryChange, change_entry_category, resolve_category
-from tracker.ledger.entries import VoidOutcome, void_entry
-from tracker.ledger.people import find_person_id
+from tracker.ledger.entries import VoidOutcome, claim_message, void_entry
+from tracker.ledger.pending import NewPendingEntry, cancel_pending_entry, confirm_pending_entry, create_pending_entry
+from tracker.ledger.people import resolve_sender
 from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.ledger.summaries import month_period, summarise
 from tracker.parsing.message import Direction
 
-PERSON_TABLES = ["person", "inbound_message", "category", "category_keyword", "entry", "budget", "budget_warning"]
+PERSON_TABLES = [
+    "person",
+    "inbound_message",
+    "category",
+    "category_keyword",
+    "entry",
+    "pending_entry",
+    "budget",
+    "budget_warning",
+]
 TABLES_WITH_PERSON_ID = PERSON_TABLES[1:]
 
 
@@ -37,6 +47,11 @@ async def alice(owner_engine: AsyncEngine, app_engine: AsyncEngine) -> int:
     async with person_transaction(app_engine, person_id) as scope:
         await change_entry_category(scope, written.entry_id, "Hiburan")
         await change_entry_category(scope, written.entry_id, "Makan")
+        inbound_message_id = await claim_message(scope, f"wamid.pending-{person_id}")
+        assert inbound_message_id is not None
+        category = await resolve_category(scope, "", Direction.SPENDING, "Makan")
+        pending = NewPendingEntry((25, 25_000), Direction.SPENDING, category, "kopi", A_DAY)
+        await create_pending_entry(scope, inbound_message_id, pending)
     return person_id
 
 
@@ -262,19 +277,37 @@ async def test_every_link_between_peoples_tables_carries_person_id(owner_engine:
     assert list(rows) == []
 
 
-async def test_the_bsuid_lookup_is_for_the_app_alone_and_cannot_be_redirected(owner_engine: AsyncEngine) -> None:
+@pytest.mark.parametrize("function", ["tracker_resolve_sender", "tracker_count_unknown_sender", "tracker_change_bsuid"])
+async def test_each_owner_function_is_for_the_app_alone_and_cannot_be_redirected(
+    owner_engine: AsyncEngine, function: str
+) -> None:
     async with owner_engine.connect() as connection:
         row = (
             await connection.execute(
                 text("""
-                    SELECT p.proconfig, has_function_privilege('tracker_app', p.oid, 'EXECUTE') AS app_may_call,
+                    SELECT p.proconfig, p.prosecdef,
+                           has_function_privilege('tracker_app', p.oid, 'EXECUTE') AS app_may_call,
                            EXISTS (SELECT 1 FROM aclexplode(p.proacl) acl WHERE acl.grantee = 0) AS public_may_call
-                    FROM pg_proc p WHERE p.proname = 'tracker_person_id_for_bsuid'
-                """)
+                    FROM pg_proc p WHERE p.proname = :function
+                """),
+                {"function": function},
             )
         ).one()
     assert row.proconfig == ["search_path=pg_catalog, public"]
-    assert (row.app_may_call, row.public_may_call) == (True, False)
+    assert (row.prosecdef, row.app_may_call, row.public_may_call) == (True, True, False)
+
+
+async def test_the_app_can_only_touch_its_own_consent_on_the_person_table(
+    app_engine: AsyncEngine, alice: int, bob: int
+) -> None:
+    async with person_transaction(app_engine, bob) as scope:
+        result = await scope.connection.execute(
+            text("UPDATE person SET consented_at = now(), consent_notice_version = 'x' WHERE id = :id"), {"id": alice}
+        )
+    assert result.rowcount == 0
+    with pytest.raises(DBAPIError, match="permission denied"):
+        async with person_transaction(app_engine, bob) as scope:
+            await scope.connection.execute(text("UPDATE person SET suspended_at = NULL"))
 
 
 async def test_the_app_cannot_read_the_migration_history(app_engine: AsyncEngine) -> None:
@@ -316,8 +349,36 @@ async def test_a_person_is_found_by_bsuid_without_reading_the_table(
 ) -> None:
     async with owner_engine.connect() as connection:
         bsuid = await connection.scalar(text("SELECT bsuid FROM person WHERE id = :id"), {"id": bob})
-    assert await find_person_id(app_engine, str(bsuid)) == bob
-    assert await find_person_id(app_engine, "ID.nobody") is None
+    assert await resolve_sender(app_engine, str(bsuid), None) == bob
+    assert await resolve_sender(app_engine, "ID.nobody", None) is None
+
+
+async def _pending_id_of(owner_engine: AsyncEngine, person_id: int) -> int:
+    async with owner_engine.connect() as connection:
+        pending_id = await connection.scalar(
+            text("SELECT id FROM pending_entry WHERE person_id = :id LIMIT 1"), {"id": person_id}
+        )
+    assert pending_id is not None
+    return int(pending_id)
+
+
+async def test_a_tap_cannot_confirm_or_cancel_another_persons_pending_entry(
+    owner_engine: AsyncEngine, app_engine: AsyncEngine, alice: int, bob: int
+) -> None:
+    pending_id = await _pending_id_of(owner_engine, alice)
+    async with person_transaction(app_engine, bob) as scope:
+        assert await confirm_pending_entry(scope, pending_id, 0) is None
+        assert not await cancel_pending_entry(scope, pending_id)
+
+
+async def test_the_code_filters_pending_entries_even_where_row_level_security_does_not_apply(
+    owner_engine: AsyncEngine, alice: int, bob: int
+) -> None:
+    pending_id = await _pending_id_of(owner_engine, alice)
+    async with owner_engine.begin() as connection:
+        scope = PersonScope(connection, bob)
+        assert await confirm_pending_entry(scope, pending_id, 0) is None
+        assert not await cancel_pending_entry(scope, pending_id)
 
 
 @pytest.mark.parametrize("table", PERSON_TABLES)

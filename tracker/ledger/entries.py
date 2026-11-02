@@ -13,7 +13,7 @@ from enum import StrEnum
 from sqlalchemy import text
 
 from tracker.ledger.budgets import BudgetWarning, record_budget_warning
-from tracker.ledger.categories import resolve_category
+from tracker.ledger.categories import Category, resolve_category
 from tracker.ledger.scope import PersonScope
 from tracker.parsing.message import Direction, ParsedEntry
 
@@ -36,15 +36,21 @@ class WrittenEntry:
     budget_warning: BudgetWarning | None
 
 
-async def write_entry(
-    scope: PersonScope,
-    meta_message_id: str,
-    entry: ParsedEntry,
-    occurred_on: date,
-    source: EntrySource = EntrySource.RULES,
-) -> WrittenEntry | None:
-    """Writes an entry, or returns None if this message was already handled."""
-    inbound_message_id = await scope.connection.scalar(
+@dataclass(frozen=True)
+class NewEntry:
+    """An entry whose amount is settled, ready to write."""
+
+    amount_rupiah: int
+    direction: Direction
+    category: Category
+    description: str
+    occurred_on: date
+    source: EntrySource = EntrySource.RULES
+
+
+async def claim_message(scope: PersonScope, meta_message_id: str) -> int | None:
+    """Records a message id, or returns None if this message was already handled."""
+    return await scope.connection.scalar(
         text("""
             INSERT INTO inbound_message (person_id, meta_message_id) VALUES (:person_id, :meta_message_id)
             ON CONFLICT (meta_message_id) DO NOTHING
@@ -52,9 +58,10 @@ async def write_entry(
         """),
         {"person_id": scope.person_id, "meta_message_id": meta_message_id},
     )
-    if inbound_message_id is None:
-        return None
-    category = await resolve_category(scope, entry.description, entry.direction, entry.category)
+
+
+async def insert_entry(scope: PersonScope, inbound_message_id: int, entry: NewEntry) -> WrittenEntry:
+    """Writes an entry for a claimed message, and any budget warning it sets off."""
     result = await scope.connection.execute(
         text("""
             INSERT INTO entry (person_id, inbound_message_id, direction, amount_rupiah, category_id,
@@ -68,17 +75,33 @@ async def write_entry(
             "inbound_message_id": inbound_message_id,
             "direction": entry.direction,
             "amount_rupiah": entry.amount_rupiah,
-            "category_id": category.id,
+            "category_id": entry.category.id,
             "description": entry.description,
-            "occurred_on": occurred_on,
-            "source": source,
+            "occurred_on": entry.occurred_on,
+            "source": entry.source,
         },
     )
     entry_id: int = result.scalar_one()
     budget_warning = None
     if entry.direction is Direction.SPENDING:
-        budget_warning = await record_budget_warning(scope, category.id, occurred_on)
-    return WrittenEntry(entry_id, category.name, budget_warning)
+        budget_warning = await record_budget_warning(scope, entry.category.id, entry.occurred_on)
+    return WrittenEntry(entry_id, entry.category.name, budget_warning)
+
+
+async def write_entry(
+    scope: PersonScope,
+    meta_message_id: str,
+    entry: ParsedEntry,
+    occurred_on: date,
+    source: EntrySource = EntrySource.RULES,
+) -> WrittenEntry | None:
+    """Writes an entry, or returns None if this message was already handled."""
+    inbound_message_id = await claim_message(scope, meta_message_id)
+    if inbound_message_id is None:
+        return None
+    category = await resolve_category(scope, entry.description, entry.direction, entry.category)
+    new_entry = NewEntry(entry.amount_rupiah, entry.direction, category, entry.description, occurred_on, source)
+    return await insert_entry(scope, inbound_message_id, new_entry)
 
 
 async def void_entry(scope: PersonScope, entry_id: int) -> VoidOutcome:

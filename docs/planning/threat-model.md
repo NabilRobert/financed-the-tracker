@@ -6,7 +6,9 @@ This page says what is protected, who from, and how each threat is stopped and
 proved. It replaces the threat table in Phase 2.
 
 **Status, 2026-11-02:** nothing is deployed, and no real person's data exists
-anywhere. "Planned" below means not built yet, not a live gap.
+anywhere. "Planned" below means not built yet, not a live gap. "Done" for the
+channel means proved with signed fixtures. No live Meta message has passed through
+it yet ([what's still unverified](slice-plan.md#the-live-check)).
 
 **A rule for this public page:** it never holds a server's address or a finding
 that is live and unfixed. Findings stay in `private/` until they are fixed.
@@ -45,12 +47,15 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T1 | A forged webhook adds entries | Signature check. Startup refuses to run with no app secret, because pywa would otherwise switch the check off with only a warning (R1, R2) | Tests: no secret stops startup; missing, wrong and body-swapped signatures get 401 or 403 and write nothing | 3 | Planned |
-| T2 | A signature is guessed by timing | A constant-time comparison | Spike 1 reads pywa's comparison; if it isn't constant-time, we check it ourselves | 3 | Planned |
+| T1 | A forged webhook adds entries | Signature check. Startup refuses to run with no app secret, because pywa would otherwise switch the check off with only a warning (R1, R2) | `tests/test_channel_webhook.py`: every missing, wrong, bare and body-swapped signature gets 401 or 403 and writes nothing; every missing or placeholder secret stops startup | 3 | Done |
+| T2 | A signature is guessed by timing | A constant-time comparison | Spike 1: pywa uses `compare_digest`. Ours does too, on bytes, because on non-ASCII text it raises | 3 | Done |
 | T3 | A captured webhook is replayed, or Meta repeats one | Unique message id in the database (L5) | `test_a_repeat_delivery_adds_nothing`, a simultaneous version, and one after undo. A restart test in slice 5 | 2 | Done |
-| T4 | A stranger uses the bot | Allow-list. Unknown senders get no reply and leave only a count (I3) | Test: an unknown sender writes no row, sends nothing, and leaves no number | 3 | Planned |
-| T5 | A flood costs money or starves the server | Rate limits (R6), a body-size limit, and the reply cap (E3) | Tests: over the limit, messages are refused with no reply and no paid send; the cap stops paid replies | 3, 4 | Planned |
-| T6 | Meta's verify token leaks through a URL log | Access logs off or scrubbed on the webhook path | Test: a verification request leaves no token in the logs | 3 | Planned |
+| T4 | A stranger uses the bot | Allow-list. Unknown senders get no reply and leave only a count (I3) | `test_a_stranger_gets_no_reply_and_leaves_only_a_count` | 3 | Done |
+| T5 | A flood costs money or starves the server | Rate limits (R6), a body-size limit, and the reply cap (E3) | `test_a_flood_stops_at_the_limit_and_costs_one_notice`; the app caps the body itself. The reply cap and Caddy's limit come later | 3, 4 | Part done |
+| T6 | Meta's verify token leaks through a URL log | Access logs off or scrubbed on the webhook path | `test_the_real_server_writes_no_token_to_its_logs`. Caddy's logs are checked in slice 5 | 3 | Part done |
+
+| T33 | A webhook carrying several messages loses all but the first, or credits one to the wrong person | Messages are split before dispatch, and each goes to the sender whose real id matches. No match fails the webhook rather than guessing | `test_every_message_in_a_batch_reaches_its_own_sender`, `test_two_people_with_no_phone_numbers_are_not_the_same_person` | 3 | Done |
+| T34 | A failed write looks like success, so the message is lost | Our routes, not pywa's: a failure answers 500 and Meta retries. pywa's duplicate cache is off, or it would swallow the retry | `test_a_failed_handler_answers_500_so_meta_retries_and_the_retry_works` | 3 | Done |
 
 ### Between people
 
@@ -59,30 +64,30 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T7 | One person reads or changes another's data | Row-level security and code filters, each tested without the other (ADR-009) | `tests/test_ledger_isolation.py`, mutation-checked | 2 | Done |
 | T8 | A foreign key crosses people, since keys ignore row-level security | Every link carries `person_id` | `test_every_link_between_peoples_tables_carries_person_id` | 2 | Done |
 | T9 | A new table forgets row-level security | A test fails on any table without it | `test_every_table_in_the_schema_has_row_level_security` | 2 | Done |
-| T10 | A tapped button acts on someone else's entry | The sender comes from the signed webhook, and the entry is checked against it (L4, I1) | Undo is tested. A test with a forged payload in slice 3 | 2, 3 | Part done |
+| T10 | A tapped button acts on someone else's entry | The sender comes from the signed webhook, and the entry is checked against it (L4, I1) | `test_a_tap_cannot_undo_another_persons_entry`, `test_a_forged_payload_does_nothing_and_breaks_nothing` | 2, 3 | Done |
 
 ### Someone holding the phone
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a confirming tap. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | Tests: suspended means no reads or writes; `hapus` without the tap deletes nothing | 3, 4 | Planned |
-| T12 | A recycled number reaches an old ledger | Keyed on BSUID, not the number (ADR-008), with number changes taken from Meta's system message | Test: a new user id on a known number gets no access | 3 | Planned |
+| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a confirming tap. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`. The tap on `hapus` comes with `hapus` in slice 4 | 3, 4 | Part done |
+| T12 | A recycled number reaches an old ledger | Keyed on BSUID, not the number (ADR-008), with number changes taken from Meta's system message | `test_a_recycled_number_with_a_new_id_reaches_nothing`, `test_a_number_change_cannot_take_over_another_persons_id` | 3 | Done |
 
 ### Sensitive content
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
 | T13 | A card or account number gets stored | Detected and refused before any write, including a pending entry (PR3) | Tests: 13 to 19 digits or a Luhn match stores nothing and goes to no model | 4 | Planned |
-| T14 | Message text, names, numbers or amounts reach logs, spans or alerts | No content by rule (PR2). The database engine runs with `hide_parameters`, so an error can't print an amount. Failure paths log an error type only | A sentinel message through every path, failures included, with logs and spans captured. It starts in slice 3, the first slice that handles text | 3, 4 | Planned |
+| T14 | Message text, names, numbers or amounts reach logs, spans or alerts | No content by rule (PR2). The database engine runs with `hide_parameters`, so an error can't print an amount. Failure paths log an error type only | `test_no_path_logs_message_text_numbers_or_ids`, failures included. Spans and alerts come in slice 4 | 3, 4 | Part done |
 | T15 | Data is kept forever | The retention table (PR6) and a purge job | Tests: expired rows are gone after the job runs | 4 | Planned |
 | T16 | A person leaves and their data stays | `hapus data saya` removes every row (I6). The app login can't delete, so this is one narrow database function | Test: zero rows in every table, and no other person's rows touched | 4 | Planned |
-| T17 | Data is stored before consent | Nothing is written before **Setuju**, with the time and notice version recorded (I4, I7) | Test: a person without consent has no entry, however they message | 3 | Planned |
+| T17 | Data is stored before consent | Nothing is written before **Setuju**, with the time and notice version recorded (I4, I7) | `test_a_person_who_has_not_agreed_gets_the_notice_and_nothing_is_stored`, `test_a_button_from_an_older_notice_records_nothing_and_shows_this_one` | 3 | Done |
 
 ### Meta
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T18 | Meta reads everything, and keeps it up to 30 days | **Can't be prevented.** Consent notice, no photos, card refusal, local storage if available (ADR-010) | The notice's text is tested. Spike 4 answers local storage | 3 | Planned |
+| T18 | Meta reads everything, and keeps it up to 30 days | **Can't be prevented.** Consent notice, no photos, card refusal, local storage if available (ADR-010) | `test_the_notice_cannot_change_without_a_new_version`. Spike 4 still answers local storage | 3 | Part done |
 | T19 | The monthly push and `ekspor` send a person's numbers through Meta | Only their own data. The template carries a total and nothing else, and both are named in the notice | Test of the template's fields | 4, 6 | Planned |
 
 Section 4.2 of Meta's terms stays open, and still gates real use.
@@ -92,7 +97,7 @@ Section 4.2 of Meta's terms stays open, and still gates real use.
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
 | T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says` | 2 | Done |
-| T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: a non-root, capped container with no owner login in its environment; little data kept. The rest is accepted | Checks in slice 5: the container's user and environment | 5 | Planned |
+| T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: a non-root, capped container with no owner login in its environment; little data kept, and the number is dropped once the BSUID is known. The rest is accepted | `test_the_first_message_links_the_bsuid_and_drops_the_number`. Checks in slice 5: the container's user and environment | 3, 5 | Part done |
 | T22 | Postgres is reachable from outside, or a login is stolen | Not published to the internet. One login per job, with the least grants (ADR-009) | Least grants are tested. An outside probe in slice 5. The monthly job's own login comes in slice 6 | 2, 5, 6 | Part done |
 | T23 | The access token or app secret is stolen | Least scopes, `.env` readable only by the app, and a written rotation steps | Rotation rehearsed once before the gate | 5 | Planned |
 | T24 | The server's host is compromised | The server's hardening is a prerequisite (P4), owned by the server work, not this repo | Part of the gate | 5 | Planned |

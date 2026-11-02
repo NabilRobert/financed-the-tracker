@@ -77,6 +77,16 @@ async def change_entry_category(scope: PersonScope, entry_id: int, category_name
     return CategoryChange.CHANGED
 
 
+async def latest_entry_id(scope: PersonScope) -> int | None:
+    """The person's newest live entry: what "kategori transport" refers to (C3)."""
+    return await scope.connection.scalar(
+        text("""
+            SELECT id FROM entry WHERE person_id = :person_id AND voided_at IS NULL ORDER BY id DESC LIMIT 1
+        """),
+        {"person_id": scope.person_id},
+    )
+
+
 async def _remember_word(scope: PersonScope, word: str, category_id: int) -> None:
     await scope.connection.execute(
         text("""
