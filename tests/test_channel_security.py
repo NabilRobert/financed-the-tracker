@@ -430,6 +430,13 @@ async def test_declining_stores_nothing_and_says_so(owner_engine: AsyncEngine, b
     assert await row_counts(owner_engine, person_id) == NO_ROWS
 
 
+async def test_tidak_before_any_notice_gets_the_notice(bot: Bot, owner_engine: AsyncEngine) -> None:
+    whatsapp_id = new_lid()
+    await create_person(owner_engine, whatsapp_id=whatsapp_id)
+    await bot.say(whatsapp_id, "tidak")
+    assert bot.waha.texts == [CONSENT_NOTICE]
+
+
 async def test_tidak_after_agreeing_is_not_a_refusal(bot: Bot, member: str) -> None:
     await bot.say(member, "tidak")
     assert bot.waha.texts[0].startswith("Belum paham.")
@@ -626,6 +633,11 @@ def test_the_cli_will_not_overwrite_an_export(
     path.write_text("keep me", encoding="utf-8")
     assert runner.invoke(cli_app, ["export", str(person_id), str(path)]).exit_code == 1
     assert path.read_text(encoding="utf-8") == "keep me"
+
+
+def test_the_cli_never_prints_local_variables_in_a_crash() -> None:
+    """They'd include the database URL."""
+    assert cli_app.pretty_exceptions_show_locals is False
 
 
 def test_the_cli_needs_the_owner_url(monkeypatch: pytest.MonkeyPatch) -> None:
