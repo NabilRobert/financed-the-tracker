@@ -51,7 +51,7 @@ server, so it can start the moment Arthur OKs the plan.
 - `tracker/parsing/amount.py`: `parse_amount(text) -> int | Ambiguous | None`;
 - `tracker/parsing/message.py`: `parse_message(text) -> ParsedEntry | ...`;
 - `tests/corpus/dev.jsonl` and `tests/corpus/holdout.jsonl`, about 300
-  hand-written messages in all, none from a real person;
+  written messages in all, none from a real person;
 - a report of coverage, wrong amounts and false writes.
 
 **Order:**
@@ -68,7 +68,7 @@ server, so it can start the moment Arthur OKs the plan.
 - every amount form in P1 is pinned by a test;
 - CI is green, and the new tests are mutation-checked.
 
-**Branch:** `feat/parser`, from `main`, once `docs/planning` is merged.
+**Branch:** `feat/amount-parser`, stacked on `docs/planning`, which merges first.
 
 ## Cost model
 

@@ -60,7 +60,7 @@ The idea is common, so the idea isn't what's being shown. What is:
 | # | Goal | Target | Measured by |
 |---|---|---|---|
 | G1 | No wrong amount is written | **0** on the held-out corpus | Corpus test in CI |
-| G2 | Common messages need no model | Rules parse ≥ 85% of the held-out corpus (first guess, set after slice 1) | Corpus test in CI |
+| G2 | Common messages need no model | Rules parse ≥ 85% of the held-out corpus (confirmed in slice 1 at 96.5%; [how far to trust it](../parser-accuracy.md)) | Corpus test in CI |
 | G3 | Every write is safe to repeat | A replayed webhook never adds a second entry | Test, and a restart test |
 | G4 | No one sees anyone else's data | Every cross-user attempt returns nothing, at the database level too | Isolation suite |
 | G5 | Summaries are right to the rupiah | Exact match against fixtures | Fixture tests, mutation-checked |
@@ -90,7 +90,7 @@ The idea is common, so the idea isn't what's being shown. What is:
 3. **Framework:** `pywa` on Meta's official Cloud API, with FastAPI,
    PydanticAI for the fallback, and Postgres with SQLAlchemy 2 and Alembic.
 
-Everything else in Phase 5 is a recommendation until Arthur agrees.
+Arthur accepted ADRs 005 to 018 as recommended on 2026-11-02.
 
 ## Open questions
 

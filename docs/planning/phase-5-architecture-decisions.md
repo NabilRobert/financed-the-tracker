@@ -1,8 +1,8 @@
 # Phase 5: Architecture Decisions
 
-Short ADRs, 2026-10-30. **Settled** ones were decided with Arthur. The rest
-are recommendations, open until he agrees. The summary table and the first
-slice are at the end.
+Short ADRs, 2026-10-30. **Settled** ones were decided with Arthur. He accepted
+ADRs 005 to 018 as recommended on 2026-11-02, with the questions under "For
+Arthur" still open. The summary table and the first slice are at the end.
 
 ```
 Person on WhatsApp ─► Meta Cloud API ─► Caddy ─► tracker (FastAPI + pywa)
@@ -20,8 +20,9 @@ monthly job (cron + Typer) ──── template ──► Meta  │
 ## Reuse map (the folder's "reuse before building" rule)
 
 Arthur's repos were searched first. No Python repo here has a rupiah parser
-or a ledger, and the only rupiah helper is a one-line TypeScript display
-formatter, so there is nothing to depend on.
+or a ledger. Two TypeScript pieces touch rupiah: a one-line display formatter,
+and `readings()` in Pitstop's `ranking.ts`, which checks figures in float and
+knows no slang. Neither fits, so there is nothing to depend on.
 
 | Part | Reused | Built (and why) |
 |---|---|---|
@@ -34,7 +35,7 @@ formatter, so there is nothing to depend on.
 | Retries | **tenacity** | — |
 | "The model proposes, code decides" | **Pitstop's** pattern, as in Juku | — |
 | Spending questions (later) | **MCP-backbone**, **mcp-security-gateway** (ADR-016) | A scoped view |
-| The Indonesian money parser | Nothing fits | **Built:** this is what the project demonstrates |
+| The Indonesian money parser | Tried in slice 1: `price-parser` reads `25rb` as 25 and `2jt500` as 2; `number-parser` has no Indonesian. Nothing fits | **Built:** this is what the project demonstrates |
 | The ledger | Firefly III and Actual Budget were considered (ADR-005) | **Built:** small, and exactness is the subject |
 
 ## ADR-001: Arthur plus a few invited people (settled)
@@ -403,20 +404,20 @@ watch.
 | 002 | Logging, undo, categories, summaries, budgets, monthly push | Photos | **Settled** |
 | 003 | Meta's official Cloud API | Twilio, Baileys, Telegram | **Settled** |
 | 004 | pywa, FastAPI, standard stack, Postgres | OpenClaw, Hermes, plain httpx | **Settled** |
-| 005 | Own small ledger | Firefly III, Actual Budget | Open |
-| 006 | BIGINT rupiah; void, don't delete | NUMERIC, floats, double-entry | Open |
-| 007 | Rules first; model proposes substrings only; off in v1 | Model first, model-supplied numbers, free-tier APIs, local model | Open |
-| 008 | BSUID as the user key | Phone number | Open |
-| 009 | Scoped code plus row-level security | Code only, one database each | Open |
-| 010 | Consent notice, minimal storage, no photos; local storage if available | Raw message storage | Open |
-| 011 | Warnings in replies; monthly template by cron | Template per warning, APScheduler | Open |
-| 012 | Count replies; Rp25,000 monthly cap; keep logging past it | No cap, stop logging | Open |
-| 013 | Commit before replying; no queue | Redis, Celery | Open |
-| 014 | pytest corpus for rules; Inspect AI for the model | agent-eval-harness | Open |
-| 015 | agent-observability and systems-monitoring | A new Grafana | Open |
-| 016 | MCP-backbone and gateway after v1 | Adding them now | Open |
-| 017 | Test number, then a dedicated SIM | Personal number, Business app number | Open |
-| 018 | One capped container, existing Postgres, after Juku's deploy | New server, serverless | Open |
+| 005 | Own small ledger | Firefly III, Actual Budget | **Accepted** |
+| 006 | BIGINT rupiah; void, don't delete | NUMERIC, floats, double-entry | **Accepted** |
+| 007 | Rules first; model proposes substrings only; off in v1 | Model first, model-supplied numbers, free-tier APIs, local model | **Accepted** |
+| 008 | BSUID as the user key | Phone number | **Accepted** |
+| 009 | Scoped code plus row-level security | Code only, one database each | **Accepted** |
+| 010 | Consent notice, minimal storage, no photos; local storage if available | Raw message storage | **Accepted** |
+| 011 | Warnings in replies; monthly template by cron | Template per warning, APScheduler | **Accepted** |
+| 012 | Count replies; Rp25,000 monthly cap; keep logging past it | No cap, stop logging | **Accepted**; the Rp25,000 figure stays open |
+| 013 | Commit before replying; no queue | Redis, Celery | **Accepted** |
+| 014 | pytest corpus for rules; Inspect AI for the model | agent-eval-harness | **Accepted** |
+| 015 | agent-observability and systems-monitoring | A new Grafana | **Accepted** |
+| 016 | MCP-backbone and gateway after v1 | Adding them now | **Accepted** |
+| 017 | Test number, then a dedicated SIM | Personal number, Business app number | **Accepted** |
+| 018 | One capped container, existing Postgres, after Juku's deploy | New server, serverless | **Accepted** |
 
 ## The first slice
 
