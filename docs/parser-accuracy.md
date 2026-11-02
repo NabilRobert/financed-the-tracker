@@ -5,8 +5,10 @@ end of every run, so they can't drift from this page without showing up.
 
 ## Result
 
-The held-out set was scored once, on commit `16a324b`, with the code frozen
-first. The code hasn't changed since.
+The held-out set was first scored once, on commit `16a324b`, with the code frozen
+first. The one parsing change since came from the ledger, not the corpus: `clean_text`
+now drops control characters, because a NUL byte crashed the database write. The
+scores didn't move.
 
 | Measure | Held-out (100) | Dev (205) | Target |
 |---|---|---|---|
