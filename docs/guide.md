@@ -96,7 +96,7 @@ costs one tap. A wrong amount costs trust in every total after it.
 | Add a category keyword | `SPENDING_KEYWORDS` in `keywords.py` |
 | Add an income word | `SALARY_WORDS` or `OTHER_INCOME_WORDS` in `keywords.py` |
 | Add a command the parser must leave alone | `COMMAND_WORDS` in `keywords.py` |
-| Add a slang amount | `SPELLED_AMOUNTS` in `amount.py` |
+| Add a slang amount | `SPELLED_AMOUNTS` in `amount.py`, or `AMBIGUOUS_SPELLED_AMOUNTS` if speakers disagree |
 | Add a unit | `UNIT_MULTIPLIERS` in `amount.py` |
 | Change a limit | `MIN_UNITLESS_RUPIAH` or `MAX_ENTRY_RUPIAH` in `amount.py` |
 | Add a reason not to write | `NOT_A_TRANSACTION_PATTERN` in `keywords.py` |
@@ -113,7 +113,7 @@ costs one tap. A wrong amount costs trust in every total after it.
 - **Moving your own money counts as spending.** `nabung`, `tarik tunai` and
   `top up` have no type of their own, so P4's default applies. The reply shows
   it, and undo is one tap.
-- **`cepek` is Rp100,** as P1 lists it, though some speakers use it for
-  Rp100,000 in context. It is one line in `SPELLED_AMOUNTS` to change.
+- **`cepek` always asks.** Some speakers mean Rp100, others Rp100,000, so the
+  bot offers both. It's one line in `AMBIGUOUS_SPELLED_AMOUNTS`.
 - **L6 isn't here.** Asking before entries above Rp10,000,000 belongs to the
   write path, in a later slice.

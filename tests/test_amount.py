@@ -37,7 +37,6 @@ def is_refused(result: int | Ambiguous | None, reason: AmbiguityReason) -> bool:
         ("goceng", 5_000),
         ("ceban", 10_000),
         ("gopek", 500),
-        ("cepek", 100),
     ],
 )
 def test_every_amount_form_in_p1_reads_exactly(text: str, rupiah: int) -> None:
@@ -213,6 +212,10 @@ def test_a_short_part_after_a_unit_asks(text: str, candidates: tuple[int, ...]) 
 @pytest.mark.parametrize("text", ["2jt5000", "2rb500jt", "2jt 1500rb", "1rb 1rb", "1jt 5m"])
 def test_parts_that_do_not_add_up_are_refused(text: str) -> None:
     assert is_refused(parse_amount(text), AmbiguityReason.UNCLEAR_FORM)
+
+
+def test_cepek_could_be_a_hundred_or_a_hundred_thousand() -> None:
+    assert parse_amount("cepek") == Ambiguous(AmbiguityReason.UNCLEAR_SLANG, (100, 100_000))
 
 
 def test_m_could_be_miliar_or_million() -> None:
