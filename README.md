@@ -39,3 +39,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 
 Start with [the guide](docs/guide.md): it follows one message from start to
 finish in about 10 minutes.
+
+## Licence
+
+[MIT](LICENSE)
