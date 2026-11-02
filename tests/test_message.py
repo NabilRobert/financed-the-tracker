@@ -120,6 +120,16 @@ def test_a_shop_name_with_a_spelled_number_asks_rather_than_adding_it() -> None:
     assert asked("makan di seribu rasa 50rb").ambiguity.reason is AmbiguityReason.SEVERAL_AMOUNTS
 
 
+def test_cepek_in_a_message_asks_with_both_readings() -> None:
+    ambiguity = asked("permen cepek").ambiguity
+    assert ambiguity.reason is AmbiguityReason.UNCLEAR_SLANG
+    assert ambiguity.candidates == (100, 100_000)
+
+
+def test_a_number_before_cepek_multiplies_it_so_it_is_not_an_item_count() -> None:
+    assert asked("2 cepek").ambiguity.reason is AmbiguityReason.SEVERAL_AMOUNTS
+
+
 def test_several_lines_ask_until_p5_is_built() -> None:
     assert asked("makan 25rb\nkopi 15rb").ambiguity.reason is AmbiguityReason.SEVERAL_AMOUNTS
 

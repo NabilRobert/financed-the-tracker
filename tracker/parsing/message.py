@@ -17,7 +17,7 @@ from typing import Final
 
 from tracker.parsing.amount import (
     MAX_TEXT_CHARS,
-    SPELLED_AMOUNTS,
+    SPELLED_WORDS,
     AmbiguityReason,
     Ambiguous,
     FoundAmount,
@@ -98,7 +98,7 @@ def _is_item_count(amount: FoundAmount, cleaned: str) -> bool:
     is_small_number = amount.value.reason is AmbiguityReason.BELOW_MIN_UNITLESS
     word_before, word_after = _word_next_to(amount, cleaned)
     is_leading = not word_before or word_before in COUNTING_VERBS
-    is_before_item = word_after.isalpha() and word_after not in SPELLED_AMOUNTS
+    is_before_item = word_after.isalpha() and word_after not in SPELLED_WORDS
     return is_small_number and is_leading and is_before_item
 
 

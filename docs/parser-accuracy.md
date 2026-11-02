@@ -5,10 +5,15 @@ end of every run, so they can't drift from this page without showing up.
 
 ## Result
 
-The held-out set was first scored once, on commit `16a324b`, with the code frozen
-first. The one parsing change since came from the ledger, not the corpus: `clean_text`
-now drops control characters, because a NUL byte crashed the database write. The
-scores didn't move.
+The held-out set was scored once, on commit `16a324b`, with the code frozen
+first. Two changes came later, and neither was found on the corpus:
+
+- `cepek` now asks instead of reading as Rp100, because speakers disagree on it.
+  No held-out message contains `cepek`.
+- `clean_text` now drops control characters, because a NUL byte crashed the
+  database write.
+
+The figures stand. CI still prints them on every run, and they haven't moved.
 
 | Measure | Held-out (100) | Dev (205) | Target |
 |---|---|---|---|
@@ -91,9 +96,9 @@ set during dogfooding, in fresh wording.
 
 ## How the checks were tested
 
-- **mutmut:** 497 mutants of `tracker/`; 496 caught. The survivor is equivalent:
+- **mutmut:** 502 mutants of `tracker/`; 501 caught. The survivor is equivalent:
   `len(remainder) >= 3` can't differ there, because 3 has already returned.
-- **By hand:** mutmut doesn't touch module-level patterns, so 28 changes to the
-  regexes and constants were made one at a time. A test caught all 28.
+- **By hand:** mutmut doesn't touch module-level patterns, so 36 changes to the
+  regexes and constants were made one at a time. A test caught all 36.
 - **Fuzz:** 5,000 seeded random strings, with a fixed seed. No crash, and no
   written amount outside the limits.
