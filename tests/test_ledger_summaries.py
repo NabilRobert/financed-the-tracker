@@ -1,5 +1,6 @@
 """Summaries match a hand-worked fixture to the rupiah (G5, S1)."""
 
+import time
 from datetime import UTC, date, datetime
 
 import pytest
@@ -42,6 +43,7 @@ async def person(owner_engine: AsyncEngine, app_engine: AsyncEngine) -> int:
 async def test_a_month_matches_the_hand_worked_fixture(app_engine: AsyncEngine, person: int) -> None:
     async with person_transaction(app_engine, person) as scope:
         summary = await summarise(scope, NOVEMBER)
+    assert summary.period == NOVEMBER
     assert summary.spending_rupiah == 3_000_037_503
     assert summary.income_rupiah == 8_250_000
     assert summary.categories == [
@@ -82,6 +84,18 @@ def test_a_week_period_starts_on_monday_from_any_day() -> None:
     assert week_period(date(2026, 11, 8)) == Period(date(2026, 11, 2), date(2026, 11, 9))
 
 
-def test_the_day_changes_at_midnight_in_jakarta_not_utc() -> None:
-    assert today_in_jakarta(datetime(2026, 11, 30, 16, 59, tzinfo=UTC)) == date(2026, 11, 30)
-    assert today_in_jakarta(datetime(2026, 11, 30, 17, 0, tzinfo=UTC)) == date(2026, 12, 1)
+def test_a_month_runs_from_its_first_day_to_the_next_months_first_day() -> None:
+    assert month_period(2026, 11) == Period(date(2026, 11, 1), date(2026, 12, 1))
+
+
+def test_the_day_changes_at_midnight_in_jakarta_whatever_the_machines_timezone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    try:
+        assert today_in_jakarta(datetime(2026, 11, 30, 16, 59, tzinfo=UTC)) == date(2026, 11, 30)
+        assert today_in_jakarta(datetime(2026, 11, 30, 17, 0, tzinfo=UTC)) == date(2026, 12, 1)
+    finally:
+        monkeypatch.undo()
+        time.tzset()

@@ -129,6 +129,16 @@ costs one tap. A wrong amount costs trust in every total after it.
 - `tests/corpus/holdout.jsonl` is scored only as a whole, and the code is never
   tuned on it. [parser-accuracy.md](parser-accuracy.md) explains why.
 
+## How the ledger's checks were tested
+
+- **mutmut:** 910 mutants of `tracker/`; 902 caught. All 8 survivors are
+  equivalent: 6 only lower-case the SQL, `datetime.now(None)` still gives the
+  same instant, and `len(remainder) >= 3` can't differ, because 3 has returned.
+- **By hand:** mutmut can't touch the migration, so 49 protections were broken
+  one at a time: policies, grants, foreign keys, checks and each code filter.
+  Tests caught 48. The other, `e.person_id = b.person_id` in the budget query, is
+  equivalent, because a category has one owner. It stays so the index is used.
+
 ## Glossary
 
 | Word | Meaning | Where |
