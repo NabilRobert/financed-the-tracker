@@ -18,7 +18,6 @@
 {"text": "es teh goceng", "outcome": "entry", "amount": 5000, "direction": "spending", "category": "Makan"}
 {"text": "gorengan ceban", "outcome": "entry", "amount": 10000, "direction": "spending", "category": "Makan"}
 {"text": "kerupuk gopek", "outcome": "entry", "amount": 500, "direction": "spending", "category": "Makan"}
-{"text": "permen cepek", "outcome": "entry", "amount": 100, "direction": "spending", "category": "Makan"}
 {"text": "beli 2 kopi 50rb", "outcome": "entry", "amount": 50000, "direction": "spending", "category": "Makan"}
 {"text": "2 kopi 50rb", "outcome": "entry", "amount": 50000, "direction": "spending", "category": "Makan"}
 {"text": "25rb makan", "outcome": "entry", "amount": 25000, "direction": "spending", "category": "Makan"}
@@ -103,6 +102,7 @@
 {"text": "25", "outcome": "ask"}
 {"text": "parkir 2", "outcome": "ask"}
 {"text": "2 kopi", "outcome": "ask"}
+{"text": "permen cepek", "outcome": "ask", "note": "Rp100 to some speakers, Rp100,000 to others"}
 {"text": "kopi 25rb roti 10rb", "outcome": "ask"}
 {"text": "makan 25rb\nkopi 15rb", "outcome": "ask", "note": "Several lines are several entries only once P5 is built"}
 {"text": "makan 15000 minum 5000", "outcome": "ask"}
