@@ -33,7 +33,8 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 **Parsing (rules, $0)**
 - **P1. Amount forms:** `25rb`, `25 ribu`, `25k`, `25.000`, `25,000`,
   `Rp25.000`, `1,5jt`, `1.5jt`, `2jt500`, `sejuta`, and slang (`goceng`,
-  `ceban`, `gopek`, `cepek`), each pinned in the corpus.
+  `ceban`, `gopek`), each pinned in the corpus. `cepek` always asks: some
+  speakers mean Rp100, others Rp100,000.
 - **P2.** Amounts are parsed with `Decimal` from the text, never `float`.
   A result that isn't a whole number of rupiah is refused.
 - **P3. Ambiguity is never guessed.** A bare number under
