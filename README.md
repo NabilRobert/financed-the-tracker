@@ -5,6 +5,10 @@ people in Indonesia. You send "makan 25rb" and it is logged in exact rupiah.
 
 **Status: slice 2 of 8.** The parser, its measured corpus and the ledger exist.
 There is no WhatsApp channel or server yet, and no model is used.
+
+**Security comes first:** no real person's data enters the system before
+[this gate](docs/planning/slice-plan.md#the-real-data-gate) passes. See
+[the threat model](docs/planning/threat-model.md).
 [The plan](docs/planning/slice-plan.md) lists what comes next.
 
 ## Run it
@@ -15,7 +19,8 @@ uv sync && uv run pytest
 
 That needs only [uv](https://docs.astral.sh/uv/). It costs nothing and calls no
 service. The run ends with the parser's accuracy on the corpus. CI also runs
-`ruff format --check .`, `ruff check .` and `pyright`.
+`ruff format --check .`, `ruff check .`, `pyright`, a secret scan (gitleaks) and
+a dependency audit (`uv audit`).
 
 The ledger tests need a throwaway Postgres, and skip without one. Start it with:
 
@@ -51,7 +56,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tests/test_*.py` | The specification, one behaviour per test |
 | `docs/guide.md` | A plain-English walk through the code |
 | `docs/parser-accuracy.md` | What was measured, and how far to trust it |
-| `docs/planning/` | The brief, requirements, decisions and slice plan |
+| `docs/planning/` | The brief, requirements, threat model, decisions and slice plan |
 
 Start with [the guide](docs/guide.md): it follows one message from start to
 finish in about 10 minutes.

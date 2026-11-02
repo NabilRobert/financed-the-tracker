@@ -33,6 +33,9 @@ knows no slang. Neither fits, so there is nothing to depend on.
 | Traces | **agent-observability**, OpenTelemetry SDK (ADR-015) | Span names only |
 | Alerts | **systems-monitoring** (ADR-015) | Its config entries, made in its repo |
 | Retries | **tenacity** | — |
+| Rate limits | The **`limits`** library, as in mcp-security-gateway's `ratelimit.py` | The per-person limits |
+| Secret scan | **gitleaks**, with Juku's checksum-verified CI step | — |
+| Dependency audit | **`uv audit`**, already in the pinned uv | — |
 | "The model proposes, code decides" | **Pitstop's** pattern, as in Juku | — |
 | Spending questions (later) | **MCP-backbone**, **mcp-security-gateway** (ADR-016) | A scoped view |
 | The Indonesian money parser | Tried in slice 1: `price-parser` reads `25rb` as 25 and `2jt500` as 2; `number-parser` has no Indonesian. Nothing fits | **Built:** this is what the project demonstrates |
@@ -420,6 +423,37 @@ has no row-level security to reuse, and its test kit is tied to its own packages
 - *`FORCE ROW LEVEL SECURITY` on the owner:* adding a person is the owner's job
   and has to see past the rules.
 
+## ADR-020: Security comes first
+
+**Decision (settled by Arthur, 2026-11-02):** this holds people's financial
+data, so when security conflicts with speed, features or cost, **security wins**.
+
+- Every threat is named in the [threat model](threat-model.md), with a control,
+  a proof and an owning slice. A control with no named threat isn't added.
+- Every remaining slice has a security done-when
+  ([slice plan](slice-plan.md#security-done-when-for-each-slice)).
+- **No real person's data, Arthur's included, enters the system before the
+  [real-data gate](slice-plan.md#the-real-data-gate) passes.** Until then, only
+  invented messages are used, on the test number.
+- One independent review comes before the gate.
+- Limits we can't remove are stated, not hidden: Meta reads every message, and
+  Arthur can read the database. A failing control can't be accepted to save time.
+- This doesn't approve any spend or server work, and section 4.2 stays open.
+
+**What it changes in the plan:** no-content tests start in slice 3, not slice 4,
+because slice 3 first handles text. Slice 5 now has the gate between deploying
+and dogfooding. A slice can slip for a security reason, and the plan accepts that.
+
+**Rejected:**
+- *Security as one concern among equals:* one leak here does more harm than a
+  late feature.
+- *Encrypting each field in the database:* the key would sit on the same server
+  as the app, so it would stop no threat we can name.
+- *A paid penetration test:* no budget, and a small app with one entry point
+  doesn't need one yet. A human review is still better if one can be found.
+- *Keeping the threat model private:* showing the reasoning is part of the
+  portfolio. Live findings stay private until fixed.
+
 ## Decisions
 
 | # | Decision | Rejected | Status |
@@ -443,6 +477,7 @@ has no row-level security to reuse, and its test kit is tied to its own packages
 | 017 | Test number, then a dedicated SIM | Personal number, Business app number | **Accepted** |
 | 018 | One capped container, existing Postgres, after Juku's deploy | New server, serverless | **Accepted** |
 | 019 | Async SQLAlchemy with `text()`, two logins, a scope on every call | ORM models, psycopg, `FORCE` RLS | **Made in slice 2** |
+| 020 | Security wins over speed, features and cost; a gate before real data | Security as an equal concern, field encryption, a paid test | **Settled** |
 
 ## The first slice
 
