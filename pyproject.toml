@@ -1,0 +1,63 @@
+[project]
+name = "whatsapp-finance-tracker"
+version = "0.0.0"
+description = "A personal finance tracker on WhatsApp: exact rupiah, measured parsing, no model in v1"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tracker"]
+
+[dependency-groups]
+dev = [
+    "mutmut==3.8.0",
+    # Validates the corpus labels. The parser itself needs no dependencies.
+    "pydantic==2.14.1",
+    "pyright==1.1.414",
+    "pytest==9.1.1",
+    "pytest-timeout==2.4.0",
+    "ruff==0.17.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# C901 and PLR09xx: the lean-code limits (complexity 10, few returns, branches, arguments and statements).
+select = ["E", "F", "W", "I", "B", "UP", "S", "ARG", "RUF", "C90", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
+# S101: pytest's asserts.
+ignore = ["S101"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# RUF001: full-width and Arabic-Indic digits are the point of the nasty-input tests.
+# S311: the fuzz test wants a seeded, repeatable generator, not a secure one.
+"tests/**" = ["RUF001", "S311"]
+
+[tool.pyright]
+include = ["tracker", "tests"]
+strict = ["tracker", "tests"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# A regex that backtracks badly on nasty input fails instead of stalling the run.
+timeout = 30
+
+[tool.mutmut]
+# Every surviving mutant is a behaviour the tests don't pin down.
+source_paths = ["tracker/"]
+# The held-out set is a measurement, not a specification: it never steers the code.
+pytest_add_cli_args_test_selection = ["tests/", "-k", "not holdout"]
+also_copy = ["tests/"]

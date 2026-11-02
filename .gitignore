@@ -26,3 +26,7 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# Tool output
+dist/
+mutants/
