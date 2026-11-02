@@ -102,6 +102,8 @@ _SPELLED = "|".join(SPELLED_AMOUNTS)
 # behind a stray separator as in "1.000.rb".
 _NUMBER = rf"(?!0[0-9])[0-9]+(?:[.,][0-9]+)*(?![.,]?[0-9])(?![.,][ ]?(?:{_UNIT})(?![a-z]))"
 
+_DROPPED_CATEGORIES = ("Cf", "Cc", "Cs")  # Format marks, control characters and lone surrogates.
+
 # Whitespace is a single plain space by now, because clean_text ran first.
 _AMOUNT_PATTERN = re.compile(
     rf"""
@@ -133,10 +135,15 @@ _AMOUNT_PATTERN = re.compile(
 )
 
 
+def _is_kept(character: str) -> bool:
+    """Drops what a person can't see and Postgres can't store: a NUL would crash the write."""
+    return character.isspace() or unicodedata.category(character) not in _DROPPED_CATEGORIES
+
+
 def clean_text(text: str) -> str:
     """Lower-cases, drops invisible characters and turns any whitespace run into one space."""
-    visible_characters = [character for character in text if unicodedata.category(character) != "Cf"]
-    return " ".join("".join(visible_characters).lower().split())
+    kept_characters = [character for character in text if _is_kept(character)]
+    return " ".join("".join(kept_characters).lower().split())
 
 
 def has_foreign_digits(cleaned: str) -> bool:
