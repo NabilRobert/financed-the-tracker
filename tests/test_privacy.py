@@ -248,6 +248,11 @@ def test_ordinary_money_is_not_mistaken_for_a_card(message: str) -> None:
     assert not looks_sensitive(message)
 
 
+def test_digits_in_small_groups_are_counted_without_their_gaps() -> None:
+    assert looks_sensitive("123 456 789 012 345 678 9012")
+    assert looks_sensitive("kartu 123 456 789 012 345")
+
+
 def test_two_groups_of_digits_are_two_numbers_not_a_card() -> None:
     assert not looks_sensitive("nomor 123456 789015")
 
@@ -571,6 +576,14 @@ def test_a_tracer_names_the_service_and_its_version() -> None:
     provider = create_tracer_provider("http://127.0.0.1:4318/v1/traces", "abc1234")
     attributes = provider.resource.attributes
     assert (attributes["service.name"], attributes["service.version"]) == (SERVICE_NAME, "abc1234")
+    provider.shutdown()
+
+
+def test_an_endpoint_turns_tracing_on_with_this_version(span_exporter: InMemorySpanExporter) -> None:
+    assert span_exporter is not None
+    provider = configure_tracing("http://127.0.0.1:4318/v1/traces", "abc1234")
+    assert provider is not None
+    assert provider.resource.attributes["service.version"] == "abc1234"
     provider.shutdown()
 
 
