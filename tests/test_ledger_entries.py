@@ -9,11 +9,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tracker.ledger.categories import CategoryChange, change_entry_category
-from tracker.ledger.entries import EntrySource, VoidOutcome, void_entry, write_entry
+from tracker.ledger.categories import CategoryChange, change_entry_category, resolve_category
+from tracker.ledger.entries import EntrySource, VoidOutcome, claim_message, void_entry, write_entry
+from tracker.ledger.pending import NewPendingEntry, create_pending_entry
 from tracker.ledger.scope import person_transaction
 from tracker.parsing.amount import MAX_ENTRY_RUPIAH
-from tracker.parsing.message import ParsedEntry, parse_message
+from tracker.parsing.message import Direction, ParsedEntry, parse_message
 
 
 @pytest.fixture
@@ -131,6 +132,26 @@ async def test_a_message_with_a_nul_byte_reaches_the_database_safely(app_engine:
     parsed = parse_message("makan\x00 siang 25rb")
     assert isinstance(parsed, ParsedEntry)
     await add_entry(app_engine, person, parsed)
+
+
+@pytest.mark.parametrize("column", ["first_amount_rupiah", "second_amount_rupiah"])
+@pytest.mark.parametrize("bad_amount", [0, MAX_ENTRY_RUPIAH + 1])
+async def test_the_database_refuses_a_pending_amount_outside_the_limits(
+    owner_engine: AsyncEngine, app_engine: AsyncEngine, person: int, column: str, bad_amount: int
+) -> None:
+    async with person_transaction(app_engine, person) as scope:
+        inbound_id = await claim_message(scope, f"wamid.pending-{person}-{column}-{bad_amount}")
+        category = await resolve_category(scope, "", Direction.SPENDING, "Makan")
+        assert inbound_id is not None
+        pending_id = await create_pending_entry(
+            scope, inbound_id, NewPendingEntry((1_000, 2_000), Direction.SPENDING, category, "x", A_DAY)
+        )
+    with pytest.raises(IntegrityError, match=column):
+        async with owner_engine.begin() as connection:
+            await connection.execute(
+                text(f"UPDATE pending_entry SET {column} = :amount WHERE id = :id"),
+                {"amount": bad_amount, "id": pending_id},
+            )
 
 
 async def test_undo_marks_the_entry_and_keeps_it(

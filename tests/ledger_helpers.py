@@ -6,7 +6,7 @@ from datetime import date
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.ledger.entries import WrittenEntry, write_entry
-from tracker.ledger.people import create_person
+from tracker.ledger.people import create_person, record_consent
 from tracker.ledger.scope import person_transaction
 from tracker.parsing.message import Direction, ParsedEntry
 
@@ -14,7 +14,11 @@ A_DAY = date(2026, 11, 2)
 
 
 async def new_person(owner_engine: AsyncEngine) -> int:
-    return await create_person(owner_engine, bsuid=f"ID.{uuid.uuid4().hex}")
+    """A person who has consented, as every ledger test assumes."""
+    person_id = await create_person(owner_engine, bsuid=f"ID.{uuid.uuid4().hex}")
+    async with person_transaction(owner_engine, person_id) as scope:
+        await record_consent(scope, "test-notice")
+    return person_id
 
 
 def spending(amount_rupiah: int, category: str = "Makan", description: str = "makan") -> ParsedEntry:

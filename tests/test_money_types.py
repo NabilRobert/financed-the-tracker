@@ -32,6 +32,8 @@ async def test_every_rupiah_column_is_a_bigint(owner_engine: AsyncEngine) -> Non
     assert [tuple(row) for row in rows] == [
         ("budget", "limit_rupiah", "bigint"),
         ("entry", "amount_rupiah", "bigint"),
+        ("pending_entry", "first_amount_rupiah", "bigint"),
+        ("pending_entry", "second_amount_rupiah", "bigint"),
     ]
 
 
@@ -58,7 +60,7 @@ def test_everything_named_rupiah_in_python_is_an_int() -> None:
     for source in PYTHON_SOURCES:
         annotations.extend(_annotated_rupiah_types(ast.parse(source.read_text(encoding="utf-8"))))
     assert annotations
-    assert set(annotations) == {"int"}
+    assert set(annotations) == {"int", "tuple[int, ...]"}
 
 
 def test_constants_with_rupiah_in_the_name_are_final_ints() -> None:
