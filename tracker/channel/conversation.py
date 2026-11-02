@@ -1,40 +1,57 @@
-"""What the bot does with one message or button press. Knows nothing of WhatsApp.
+"""What the bot does with one message. Knows nothing of WhatsApp or WAHA.
 
-Each handler returns the Reply to send, or None for silence. Everything happens in one
+Each handler returns the text to send, or None for silence. Everything happens in one
 transaction that commits before the caller sends anything, so a crash can't lose an
 entry that a person was told about (ADR-013).
+
+Reply buttons don't work on WAHA, so answers are typed. They carry no id: `ya`, `1`, `2`
+and `batal` can only reach the sender's own newest question or newest entry, which is
+why a new entry closes any open question, and `batal` never reaches past the newest.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.channel import replies
-from tracker.channel.buttons import ButtonAction, ButtonPress, read_payload
 from tracker.channel.commands import run_command
+from tracker.channel.gateway import IncomingMessage, Sender
 from tracker.channel.ratelimit import Admission, MessageLimiter
-from tracker.channel.replies import CONSENT_NOTICE_VERSION, Reply
+from tracker.channel.replies import CONSENT_NOTICE, CONSENT_NOTICE_VERSION
 from tracker.ledger.categories import resolve_category
 from tracker.ledger.entries import NewEntry, VoidOutcome, claim_message, insert_entry, void_entry
-from tracker.ledger.pending import NewPendingEntry, cancel_pending_entry, confirm_pending_entry, create_pending_entry
-from tracker.ledger.people import count_unknown_sender, has_consented, record_consent, resolve_sender
+from tracker.ledger.pending import (
+    NewPendingEntry,
+    OpenQuestion,
+    cancel_pending_entry,
+    close_open_questions,
+    confirm_pending_entry,
+    create_pending_entry,
+    find_open_question,
+)
+from tracker.ledger.people import (
+    count_unknown_sender,
+    has_consented,
+    newest_entry,
+    notice_sent_version,
+    record_consent,
+    record_notice_sent,
+    resolve_sender,
+)
 from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.ledger.summaries import today_in_jakarta
-from tracker.parsing.amount import AmbiguityReason
+from tracker.parsing.amount import AmbiguityReason, clean_text
 from tracker.parsing.message import AmbiguousEntry, ParsedEntry, parse_message
 
 MAX_UNCONFIRMED_RUPIAH: Final = 10_000_000  # L6.
-MAX_READINGS_ON_BUTTONS: Final = 2  # Meta allows three reply buttons, and Batal takes one.
-
-
-@dataclass(frozen=True)
-class Sender:
-    """Who a signed webhook says this is (I1). Nothing else may name a person."""
-
-    bsuid: str
-    phone: str | None
+MAX_READINGS_TO_OFFER: Final = 2  # More than this can't be answered with one word.
+AGREE_WORD: Final = "setuju"
+DECLINE_WORD: Final = "tidak"
+YES_WORD: Final = "ya"
+CANCEL_WORD: Final = "batal"
+CHOICE_WORDS: Final[dict[str, int]] = {"1": 0, "2": 1}
 
 
 @dataclass(frozen=True)
@@ -43,93 +60,82 @@ class Conversation:
     limiter: MessageLimiter
     human_contact: str
 
-    async def _admit(self, sender: Sender) -> int | Reply | None:
+    async def _admit(self, sender: Sender) -> int | str | None:
         """The person's id, a reply that ends here, or None for silence."""
-        person_id = await resolve_sender(self.engine, sender.bsuid, sender.phone)
+        person_id = await resolve_sender(self.engine, sender.whatsapp_id, sender.phone)
         if person_id is None:
             await count_unknown_sender(self.engine)
             return None
         admission = await self.limiter.admit(person_id)
         if admission is Admission.ALLOWED:
             return person_id
-        return Reply(replies.RATE_LIMITED) if admission is Admission.REFUSED_WITH_NOTICE else None
+        return replies.RATE_LIMITED if admission is Admission.REFUSED_WITH_NOTICE else None
 
-    async def handle_text(self, sender: Sender, meta_message_id: str, text: str, sent_at: datetime) -> Reply | None:
+    async def handle(self, sender: Sender, message: IncomingMessage) -> str | None:
         admitted = await self._admit(sender)
         if not isinstance(admitted, int):
             return admitted
         async with person_transaction(self.engine, admitted) as scope:
             if not await has_consented(scope):
-                return replies.consent_request()
-            inbound_message_id = await claim_message(scope, meta_message_id)
+                return await _ask_for_consent(scope, message.text)
+            inbound_message_id = await claim_message(scope, message.message_id)
             if inbound_message_id is None:
                 return None
-            today = today_in_jakarta(sent_at)
-            command_reply = await run_command(scope, text, today, self.human_contact)
-            if command_reply is not None:
-                return command_reply
-            return await _log_message(scope, inbound_message_id, text, today)
+            if message.text is None:
+                return replies.NOT_TEXT
+            return await self._answer(scope, inbound_message_id, message.text, today_in_jakarta(message.sent_at))
 
-    async def handle_other_message(self, sender: Sender, meta_message_id: str) -> Reply | None:
-        """A photo, sticker or voice note. It's never downloaded, and nothing of it is kept."""
-        admitted = await self._admit(sender)
-        if not isinstance(admitted, int):
-            return admitted
-        async with person_transaction(self.engine, admitted) as scope:
-            if not await has_consented(scope):
-                return replies.consent_request()
-            is_new = await claim_message(scope, meta_message_id) is not None
-        return Reply(replies.NOT_TEXT) if is_new else None
-
-    async def handle_button(self, sender: Sender, meta_message_id: str, payload: str) -> Reply | None:
-        press = read_payload(payload)
-        if press is None:
-            return None
-        admitted = await self._admit(sender)
-        if not isinstance(admitted, int):
-            return admitted
-        async with person_transaction(self.engine, admitted) as scope:
-            if press.action in (ButtonAction.AGREE, ButtonAction.DECLINE):
-                return await _answer_consent(scope, press)
-            if not await has_consented(scope) or await claim_message(scope, meta_message_id) is None:
-                return None
-            return await _press_button(scope, press)
+    async def _answer(self, scope: PersonScope, inbound_message_id: int, text: str, today: date) -> str:
+        word = clean_text(text)
+        question = await find_open_question(scope)
+        if question is not None and word in (YES_WORD, CANCEL_WORD, *CHOICE_WORDS):
+            return await _answer_question(scope, question, word)
+        if word == CANCEL_WORD:
+            return await _undo_newest(scope)
+        command_reply = await run_command(scope, text, today, self.human_contact)
+        if command_reply is not None:
+            return command_reply
+        await close_open_questions(scope)  # A late `ya` must not answer a question from before this.
+        return await _log_message(scope, inbound_message_id, text, today)
 
 
-async def _answer_consent(scope: PersonScope, press: ButtonPress) -> Reply:
-    already_agreed = await has_consented(scope)
-    if press.action is ButtonAction.DECLINE:
-        # An old "Tidak" must not say nothing is stored once something is.
-        return Reply(replies.ALREADY_AGREED if already_agreed else replies.CONSENT_DECLINED)
-    if press.target_id != CONSENT_NOTICE_VERSION:
-        return replies.consent_request()  # They agreed to an older notice: show them this one.
-    await record_consent(scope, str(CONSENT_NOTICE_VERSION))
-    return Reply(replies.CONSENT_THANKS)
+async def _ask_for_consent(scope: PersonScope, text: str | None) -> str:
+    """I4: stores nothing about the message. `setuju` counts only for a notice this person was sent."""
+    word = clean_text(text or "")
+    was_sent_this_notice = await notice_sent_version(scope) == CONSENT_NOTICE_VERSION
+    if was_sent_this_notice and word == AGREE_WORD:
+        await record_consent(scope, CONSENT_NOTICE_VERSION)
+        return replies.CONSENT_THANKS
+    if was_sent_this_notice and word == DECLINE_WORD:
+        return replies.CONSENT_DECLINED
+    await record_notice_sent(scope, CONSENT_NOTICE_VERSION)
+    return CONSENT_NOTICE
 
 
-async def _press_button(scope: PersonScope, press: ButtonPress) -> Reply:
-    target_id = press.target_id
-    assert target_id is not None  # read_payload guarantees it for these actions.
-    if press.action is ButtonAction.UNDO:
-        return _undo_reply(await void_entry(scope, target_id))
-    if press.action is ButtonAction.CANCEL:
-        return Reply(replies.CANCELLED if await cancel_pending_entry(scope, target_id) else replies.PENDING_GONE)
-    confirmed = await confirm_pending_entry(scope, target_id, press.choice)
-    if confirmed is None:
-        return Reply(replies.PENDING_GONE)
-    return replies.entry_written(
-        confirmed.written.entry_id,
-        confirmed.direction,
-        confirmed.written.category,
-        confirmed.amount_rupiah,
-        confirmed.written.budget_warning,
-    )
+async def _answer_question(scope: PersonScope, question: OpenQuestion, word: str) -> str:
+    if word == CANCEL_WORD:
+        await cancel_pending_entry(scope, question.pending_id)
+        return replies.CANCELLED
+    if question.has_two_readings and word == YES_WORD:
+        return replies.ANSWER_ONE_OR_TWO
+    choice = CHOICE_WORDS.get(word, 0)
+    if choice == 1 and not question.has_two_readings:
+        return replies.ANSWER_YES_OR_CANCEL
+    confirmed = await confirm_pending_entry(scope, question.pending_id, choice)
+    if confirmed is None:  # It expired between finding it and answering.
+        return replies.QUESTION_EXPIRED
+    written = confirmed.written
+    return replies.entry_written(confirmed.direction, written.category, confirmed.amount_rupiah, written.budget_warning)
 
 
-def _undo_reply(outcome: VoidOutcome) -> Reply:
-    if outcome is VoidOutcome.VOIDED:
-        return Reply(replies.UNDONE)
-    return Reply(replies.ALREADY_UNDONE if outcome is VoidOutcome.ALREADY_VOIDED else replies.ENTRY_NOT_FOUND)
+async def _undo_newest(scope: PersonScope) -> str:
+    """Undoes the newest entry only, so repeating `batal` can't reach an older one (L4)."""
+    entry = await newest_entry(scope)
+    if entry is None:
+        return replies.NOTHING_TO_UNDO
+    if await void_entry(scope, entry.entry_id) is VoidOutcome.VOIDED:
+        return replies.entry_undone(entry.category, entry.amount_rupiah)
+    return replies.ALREADY_UNDONE
 
 
 async def _ask(
@@ -138,34 +144,32 @@ async def _ask(
     entry: ParsedEntry | AmbiguousEntry,
     today: date,
     amounts: tuple[int, ...],
-) -> int:
+) -> None:
     category = await resolve_category(scope, entry.description, entry.direction, entry.category)
     pending = NewPendingEntry(amounts, entry.direction, category, entry.description, today)
-    return await create_pending_entry(scope, inbound_message_id, pending)
+    await create_pending_entry(scope, inbound_message_id, pending)
 
 
-async def _log_message(scope: PersonScope, inbound_message_id: int, text: str, today: date) -> Reply:
+async def _log_message(scope: PersonScope, inbound_message_id: int, text: str, today: date) -> str:
     parsed = parse_message(text)
     if parsed is None:
-        return Reply(replies.NOT_UNDERSTOOD)
+        return replies.NOT_UNDERSTOOD
     if isinstance(parsed, AmbiguousEntry):
         return await _ask_about(scope, inbound_message_id, parsed, today)
     if parsed.amount_rupiah > MAX_UNCONFIRMED_RUPIAH:
-        pending_id = await _ask(scope, inbound_message_id, parsed, today, (parsed.amount_rupiah,))
-        return replies.large_amount_question(pending_id, parsed.amount_rupiah)
+        await _ask(scope, inbound_message_id, parsed, today, (parsed.amount_rupiah,))
+        return replies.large_amount_question(parsed.amount_rupiah)
     category = await resolve_category(scope, parsed.description, parsed.direction, parsed.category)
     entry = NewEntry(parsed.amount_rupiah, parsed.direction, category, parsed.description, today)
     written = await insert_entry(scope, inbound_message_id, entry)
-    return replies.entry_written(
-        written.entry_id, parsed.direction, written.category, parsed.amount_rupiah, written.budget_warning
-    )
+    return replies.entry_written(parsed.direction, written.category, parsed.amount_rupiah, written.budget_warning)
 
 
-async def _ask_about(scope: PersonScope, inbound_message_id: int, entry: AmbiguousEntry, today: date) -> Reply:
-    """Offers the readings when a tap can settle it, and explains when only a new message can."""
+async def _ask_about(scope: PersonScope, inbound_message_id: int, entry: AmbiguousEntry, today: date) -> str:
+    """Offers the readings when one word can settle it, and explains when only a new message can."""
     reason, candidates = entry.ambiguity.reason, entry.ambiguity.candidates
-    can_offer = 0 < len(candidates) <= MAX_READINGS_ON_BUTTONS and reason is not AmbiguityReason.SEVERAL_AMOUNTS
+    can_offer = 0 < len(candidates) <= MAX_READINGS_TO_OFFER and reason is not AmbiguityReason.SEVERAL_AMOUNTS
     if not can_offer:
         return replies.refusal(reason)
-    pending_id = await _ask(scope, inbound_message_id, entry, today, candidates)
-    return replies.question(reason, pending_id, candidates)
+    await _ask(scope, inbound_message_id, entry, today, candidates)
+    return replies.question(reason, candidates)

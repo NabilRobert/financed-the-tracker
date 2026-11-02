@@ -21,7 +21,7 @@ from corpus_scoring import DEV_CORPUS, HOLDOUT_CORPUS, format_score, load_corpus
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from webhook_fixtures import AGREE, WEBHOOK_PATH, FakeMeta, app_settings, button_update, new_bsuid, signature_for
+from webhook_fixtures import WEBHOOK_PATH, FakeWaha, app_settings, new_lid, signed_headers, text_event
 
 from tracker.channel.webhook import create_app
 from tracker.ledger.people import create_person
@@ -114,14 +114,14 @@ async def owner_engine(database_name: str) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-def fake_meta() -> FakeMeta:
-    return FakeMeta()
+def fake_waha() -> FakeWaha:
+    return FakeWaha()
 
 
 @pytest.fixture
-async def client(database_name: str, fake_meta: FakeMeta) -> AsyncIterator[httpx.AsyncClient]:
-    """The whole app, reached over ASGI. Meta's API is the stand-in, so nothing leaves the machine."""
-    app = create_app(app_settings(database_url("tracker_app", database_name)), fake_meta.transport())
+async def client(database_name: str, fake_waha: FakeWaha) -> AsyncIterator[httpx.AsyncClient]:
+    """The whole app, reached over ASGI. WAHA is the stand-in, so nothing leaves the machine."""
+    app = create_app(app_settings(database_url("tracker_app", database_name)), fake_waha.transport())
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):  # The transport runs no lifespan, and the engine needs closing.
         async with httpx.AsyncClient(transport=transport, base_url="http://tracker.test") as test_client:
@@ -129,27 +129,31 @@ async def client(database_name: str, fake_meta: FakeMeta) -> AsyncIterator[httpx
 
 
 class Bot:
-    """Sends signed webhooks to the app, as Meta would."""
+    """Sends signed events to the app, as WAHA would."""
 
-    def __init__(self, client: httpx.AsyncClient, meta: FakeMeta) -> None:
+    def __init__(self, client: httpx.AsyncClient, waha: FakeWaha) -> None:
         self.client = client
-        self.meta = meta
+        self.waha = waha
 
-    async def post(self, update: dict[str, Any]) -> httpx.Response:
-        body = json.dumps(update).encode()
-        return await self.client.post(WEBHOOK_PATH, content=body, headers={"X-Hub-Signature-256": signature_for(body)})
+    async def post(self, event: dict[str, Any]) -> httpx.Response:
+        body = json.dumps(event).encode()
+        return await self.client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
+
+    async def say(self, sender: str, text: str) -> httpx.Response:
+        return await self.post(text_event(sender, text))
 
 
 @pytest.fixture
-def bot(client: httpx.AsyncClient, fake_meta: FakeMeta) -> Bot:
-    return Bot(client, fake_meta)
+def bot(client: httpx.AsyncClient, fake_waha: FakeWaha) -> Bot:
+    return Bot(client, fake_waha)
 
 
 @pytest.fixture
 async def member(owner_engine: AsyncEngine, bot: Bot) -> str:
-    """The BSUID of someone on the allow-list who has agreed to the notice."""
-    bsuid = new_bsuid()
-    await create_person(owner_engine, bsuid=bsuid)
-    await bot.post(button_update(bsuid, AGREE))
-    bot.meta.sent.clear()
-    return bsuid
+    """The id of someone on the allow-list who has agreed to the notice."""
+    whatsapp_id = new_lid()
+    await create_person(owner_engine, whatsapp_id=whatsapp_id)
+    await bot.say(whatsapp_id, "halo")
+    await bot.say(whatsapp_id, "setuju")
+    bot.waha.texts.clear()
+    return whatsapp_id

@@ -1,0 +1,14 @@
+{
+  "name": "default",
+  "start": true,
+  "config": {
+    "webhooks": [
+      {
+        "url": "http://host.docker.internal:8099/webhook",
+        "events": ["message", "session.status"],
+        "hmac": { "key": "change-me" },
+        "retries": { "policy": "exponential", "delaySeconds": 2, "attempts": 6 }
+      }
+    ]
+  }
+}

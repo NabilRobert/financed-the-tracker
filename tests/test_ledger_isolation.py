@@ -277,7 +277,7 @@ async def test_every_link_between_peoples_tables_carries_person_id(owner_engine:
     assert list(rows) == []
 
 
-@pytest.mark.parametrize("function", ["tracker_resolve_sender", "tracker_count_unknown_sender", "tracker_change_bsuid"])
+@pytest.mark.parametrize("function", ["tracker_resolve_sender", "tracker_count_unknown_sender"])
 async def test_each_owner_function_is_for_the_app_alone_and_cannot_be_redirected(
     owner_engine: AsyncEngine, function: str
 ) -> None:
@@ -344,13 +344,13 @@ async def test_the_code_filters_reads_even_where_row_level_security_does_not_app
         assert await read(PersonScope(connection, bob)) == 0
 
 
-async def test_a_person_is_found_by_bsuid_without_reading_the_table(
+async def test_a_person_is_found_by_id_without_reading_the_table(
     owner_engine: AsyncEngine, app_engine: AsyncEngine, bob: int
 ) -> None:
     async with owner_engine.connect() as connection:
-        bsuid = await connection.scalar(text("SELECT bsuid FROM person WHERE id = :id"), {"id": bob})
-    assert await resolve_sender(app_engine, str(bsuid), None) == bob
-    assert await resolve_sender(app_engine, "ID.nobody", None) is None
+        whatsapp_id = await connection.scalar(text("SELECT whatsapp_id FROM person WHERE id = :id"), {"id": bob})
+    assert await resolve_sender(app_engine, str(whatsapp_id), None) == bob
+    assert await resolve_sender(app_engine, "nobody@lid", None) is None
 
 
 async def _pending_id_of(owner_engine: AsyncEngine, person_id: int) -> int:

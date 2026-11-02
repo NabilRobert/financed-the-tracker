@@ -1,7 +1,7 @@
-"""Entries waiting for a person's answer: nothing here reaches the ledger until they tap Ya.
+"""Entries waiting for a person's answer: nothing here reaches the ledger until they say so.
 
 The update that resolves a pending entry is one statement with its conditions in the
-WHERE, so a double tap or two racing deliveries can only ever win once.
+WHERE, so a repeated answer or two racing deliveries can only ever win once.
 """
 
 from dataclasses import dataclass
@@ -25,6 +25,12 @@ class NewPendingEntry:
     category: Category
     description: str
     occurred_on: date
+
+
+@dataclass(frozen=True)
+class OpenQuestion:
+    pending_id: int
+    has_two_readings: bool
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,30 @@ async def create_pending_entry(scope: PersonScope, inbound_message_id: int, pend
     )
     pending_id: int = result.scalar_one()
     return pending_id
+
+
+async def find_open_question(scope: PersonScope) -> OpenQuestion | None:
+    """The person's newest unanswered question. Typed answers carry no id, so they mean this one."""
+    row = (
+        await scope.connection.execute(
+            text("""
+                SELECT id, second_amount_rupiah IS NOT NULL AS has_two_readings FROM pending_entry
+                WHERE person_id = :person_id AND resolved_at IS NULL AND expires_at > now()
+                ORDER BY id DESC LIMIT 1
+                FOR UPDATE
+            """),
+            {"person_id": scope.person_id},
+        )
+    ).one_or_none()
+    return None if row is None else OpenQuestion(row.id, row.has_two_readings)
+
+
+async def close_open_questions(scope: PersonScope) -> None:
+    """A new entry ends any open question, so a late `ya` can't answer an old one (T10)."""
+    await scope.connection.execute(
+        text("UPDATE pending_entry SET resolved_at = now() WHERE person_id = :person_id AND resolved_at IS NULL"),
+        {"person_id": scope.person_id},
+    )
 
 
 async def confirm_pending_entry(scope: PersonScope, pending_id: int, choice: int) -> ConfirmedEntry | None:
