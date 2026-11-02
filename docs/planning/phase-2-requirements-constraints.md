@@ -99,7 +99,8 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
   count is kept, not their number.
 - **I4.** No entry is stored before **setuju**, and the time is recorded.
 - **I5.** Database-level isolation between people, tested (ADR-009).
-- **I6.** `hapus data saya` deletes every row for that person. **`ekspor`** sends
+- **I6.** `hapus data saya`, confirmed with `hapus semua` within ten minutes, deletes
+  every row for that person. **`ekspor`** sends
   their data as a CSV. It's a Must now, as is **`tracker export`**, which works with
   WAHA stopped, because the channel can vanish (ADR-022).
 - **I7.** The consent record holds the time and the version of the notice
@@ -140,7 +141,11 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
   already safe by then.
 - **R4.** A failure in a handler is visible: it is recorded and alerts,
   rather than being lost behind a 200.
-- **R5.** `/healthz` checks the database, for the monitoring probe.
+- **R5.** `/healthz` checks the database for the monitoring probe, and gives `version`,
+  the deployed commit, for the drift check.
+- **R7.** Replies are limited to `MAX_REPLIES_PER_MINUTE` (30) and `MAX_REPLIES_PER_DAY`
+  (500) across everyone. This replaces Meta's cap: a burst of sends is what gets a number
+  banned. Past it, entries are still logged, and only the echo stops.
 - **R6.** Each person is limited to `MAX_MESSAGES_PER_MINUTE` (20) and
   `MAX_MESSAGES_PER_DAY` (300), far above real use. Past that, messages are
   refused with one notice an hour. Caddy limits the request body's size.
@@ -187,6 +192,7 @@ flowchart LR
 |---|---|
 | `person` | WhatsApp id, or a number awaiting its first message; the notice sent, consent time and notice version; suspension time |
 | `inbound_message` | The message id (unique), person, time, outcome. No text |
+| `deleted_person` | The ids of people who left, and when, for re-applying after a restore |
 | `entry` | Person, direction, `amount_rupiah`, category, description, `occurred_on`, `voided_at`, source (`rules` or `model`) |
 | `pending_entry` | A proposal waiting for **Ya**, with its expiry |
 | `category` and `category_keyword` | Per-person lists |
@@ -220,7 +226,7 @@ messages from anyone, no session files. Corpus messages are written by hand.
 
 | | Items |
 |---|---|
-| **Must** | P1–P4, L1–L6, C1–C3, S1–S2, B1–B4, I1–I5, I7, I8, `hapus data saya`, PR1–PR7, R1–R6, E1–E3, the [real-data gate](slice-plan.md#the-real-data-gate) |
+| **Must** | P1–P4, L1–L6, C1–C3, S1–S2, B1–B4, I1–I5, I7, I8, `hapus data saya`, PR1–PR7, R1–R7, E1–E3, the [real-data gate](slice-plan.md#the-real-data-gate) |
 | **Should** | P5, P6, `ekspor`, the model fallback (M1–M5) once budget and provider terms allow |
 | **Could** | Spending questions through MCP-backbone (ADR-016) |
 | **Won't (v1)** | Everything under Non-goals in Phase 1 |
