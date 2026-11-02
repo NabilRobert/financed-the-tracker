@@ -5,7 +5,11 @@ description = "A personal finance tracker on WhatsApp: exact rupiah, measured pa
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "alembic==1.20.0",
+    "asyncpg==0.32.0",
+    "sqlalchemy[asyncio]==2.1.4",
+]
 
 [build-system]
 requires = ["hatchling==1.27.0"]
@@ -21,6 +25,7 @@ dev = [
     "pydantic==2.14.1",
     "pyright==1.1.414",
     "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
     "pytest-timeout==2.4.0",
     "ruff==0.17.0",
 ]
@@ -41,10 +46,13 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 # RUF001: full-width and Arabic-Indic digits are the point of the nasty-input tests.
 # S311: the fuzz test wants a seeded, repeatable generator, not a secure one.
-"tests/**" = ["RUF001", "S311"]
+# S105, S608 and PLR0913: tests hold fake credentials, build SQL from fixed strings, and take many fixtures.
+"tests/**" = ["RUF001", "S311", "S105", "S608", "PLR0913"]
+# Migrations build SQL from fixed strings, never from input.
+"migrations/**" = ["S608"]
 
 [tool.pyright]
-include = ["tracker", "tests"]
+include = ["tracker", "tests", "migrations"]
 strict = ["tracker", "tests"]
 pythonVersion = "3.12"
 venvPath = "."
@@ -54,10 +62,13 @@ venv = ".venv"
 testpaths = ["tests"]
 # A regex that backtracks badly on nasty input fails instead of stalling the run.
 timeout = 30
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.mutmut]
 # Every surviving mutant is a behaviour the tests don't pin down.
 source_paths = ["tracker/"]
 # The held-out set is a measurement, not a specification: it never steers the code.
 pytest_add_cli_args_test_selection = ["tests/", "-k", "not holdout"]
-also_copy = ["tests/"]
+also_copy = ["tests/", "migrations/", "ops/", "alembic.ini"]
