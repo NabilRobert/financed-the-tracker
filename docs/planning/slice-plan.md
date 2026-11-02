@@ -35,10 +35,52 @@ mutation-checked once. Each slice updates `docs/guide.md`.
 | **2. Ledger** | Schema and migrations; row-level security; write, void, categories, keywords; summaries and budgets in SQL; a test that no money is held in a float | Fixture summaries match to the rupiah; the isolation suite passes, mutation-checked | $0 |
 | **3. WhatsApp channel** | pywa handlers; signature check; message-id idempotency; allow-list; consent; buttons; commands; `bantuan` | Signed fixtures cover every path; replays add nothing; a forged request is refused; one live round trip on the test number through a local tunnel | $0 |
 | **4. Privacy and operations** | `hapus data saya`; `ekspor`; card-number refusal; reply counter and cap; spans; `/healthz`; no-content tests | Deletion leaves zero rows; the cap fires in a test; no message text in logs or spans | $0 |
-| **5. Deploy and dogfood** | Container; Caddy; backups included; probes through the systems-monitoring session; Arthur alone for 2 weeks | Alerts fired on purpose and received; a restart loses nothing; misses are counted and turned into corpus cases | $0 |
+| **5. Deploy, gate, then dogfood** | Container; Caddy; backups included; probes through the systems-monitoring session; [the gate](#the-real-data-gate); then Arthur alone for 2 weeks | Alerts fired on purpose and received; a restart loses nothing; the gate passes; misses are counted and turned into corpus cases | $0 |
 | **6. Invite and monthly push** | Dedicated number; the approved template; the monthly job; up to 4 invitations, sent by Arthur | The push can't send twice; deletion checked with a real invited person's agreement | Under Rp3,000 a month |
 | **7. Model fallback (Should)** | The typed proposal; validation; the Inspect task | Zero invented amounts in the eval; Arthur's OK for each paid run | About $0.10, not budgeted yet |
 | **8. Evidence and write-up** | Results from records; JOURNEY; portfolio entry (with the portfolio session) | Every number traces to a file; a privacy check passes | $0 |
+
+## Security done-when for each slice
+
+Security comes first ([ADR-020](phase-5-architecture-decisions.md#adr-020-security-comes-first)).
+A slice isn't done until these pass as well, each shown by a test or a command.
+T numbers are in the [threat model](threat-model.md).
+
+**Already done:** the secret scan and dependency audit in CI (T30, T31), and
+slice 2's isolation, least grants and no-delete rules (T3, T7 to T9, T20).
+
+| Slice | Security done-when |
+|---|---|
+| **3** | Signature checks fail closed: no app secret stops startup, and every bad signature gets 401 or 403 and writes nothing (T1, T2). Unknown senders get nothing (T4). Rate limits work (T5). No token in logs (T6). Forged button payloads fail (T10). Suspension works (T11). Recycled numbers get nothing (T12). No-content tests pass on every path, failures included (T14). Consent is recorded with its notice version, and nothing is stored before it (T17). The phone number is dropped once the BSUID is known (T21). The notice's text is pinned (T18). Only invented messages go through the test number |
+| **4** | Card numbers are refused before any write (T13). No-content tests cover spans and alerts (T14). The purge job meets PR6 (T15). `hapus data saya` leaves zero rows through one narrow database function, and needs the tap (T11, T16). `ekspor` carries only that person's data (T19). The reply cap fires (T5) |
+| **5** | Non-root, capped container with no owner login in its environment (T21). Postgres can't be reached from outside (T22). Token and secret rotation rehearsed (T23). Backups are encrypted, and a restore is tested and timed (T25, T26). A deletion survives a restore (T27). Replay survives a restart (T3). Then the gate |
+| **6** | The monthly job has its own least-privilege login (T22). The template holds only the total (T19). The gate's checks are re-run on the deployed commit before the first invitation, and each invited person's consent is recorded |
+| **7** | The provider's written terms are read, and Arthur agrees (T29). The injection cases pass, and zero invented amounts (T28). The notice is updated, and existing people consent again, before it's turned on |
+| **8** | The privacy check covers every published number, screenshot and log. Nothing real, and no live finding, reaches the public repo |
+
+## The real-data gate
+
+**No real person's data, Arthur's included, enters the system until every line
+here passes on the deployed commit.** Until then, only invented messages are
+used. Arthur signs it, in writing. A failing control can't be accepted to save
+time.
+
+| # | Must be true | Proof | Today |
+|---|---|---|---|
+| 1 | Webhook signatures fail closed, including pywa's missing-secret case | Tests, and a forged request against the deployed app | Planned, slice 3 |
+| 2 | Row-level security holds on the deployed database | The isolation suite passes, and is mutation-checked | Passes in CI; deployed run in slice 5 |
+| 3 | No message text, names, numbers or amounts in logs, spans or alerts | No-content tests, and a sentinel message searched for on the server | Planned, slices 3 and 4 |
+| 4 | Backups are encrypted, and a restore works | A timed restore into an empty database | Planned, slice 5 |
+| 5 | Retention and `hapus data saya` work, and deletion survives a restore | Tests, and one real run with invented data | Planned, slices 4 and 5 |
+| 6 | Rate limits and the reply cap work | Tests | Planned, slices 3 and 4 |
+| 7 | Secret scan and dependency audit pass | CI, green on the deployed commit | In CI since this branch |
+| 8 | Database logins have the least privilege | Grant tests, and a check of the app's environment | App login done; the rest in slices 5 and 6 |
+| 9 | Consent is recorded, with its notice version | Tests | Planned, slice 3 |
+| 10 | An adversarial pass is done, with every finding fixed | A written pass over bad input, failure paths and restarts, plus the threat model's Planned rows | Planned, slice 5 |
+| 11 | The independent review is done, with every finding fixed | Its report, kept private until fixed ([who does it](threat-model.md#independent-review)) | Planned, slice 5 |
+| 12 | The server is ready for this data (P4) | Confirmed by the server work | Open |
+| 13 | **Section 4.2 is decided (P6)** | Arthur's written decision | Open |
+| 14 | The threat model is current | Every row is Done, or is listed under "What we accept" | Open |
 
 ## Slice 1 in detail: the first slice
 

@@ -67,6 +67,7 @@ The idea is common, so the idea isn't what's being shown. What is:
 | G6 | It fits the small shared server | App under its memory cap (ADR-018) | Measured, then published |
 | G7 | It costs next to nothing | Rp0 from the model in v1; Meta costs within the cap (ADR-012) | Monthly count from delivery records |
 | G8 | Arthur keeps using it | Logs on at least 20 of the first 30 days | Rows, Arthur's only |
+| G9 | No real data before it's safe | No real person's data before the [real-data gate](slice-plan.md#the-real-data-gate) passes | The gate's checklist, signed by Arthur |
 
 ## Non-goals (v1)
 
@@ -89,6 +90,8 @@ The idea is common, so the idea isn't what's being shown. What is:
    budgets with a monthly push.
 3. **Framework:** `pywa` on Meta's official Cloud API, with FastAPI,
    PydanticAI for the fallback, and Postgres with SQLAlchemy 2 and Alembic.
+4. **Security comes first (2026-11-02):** this is people's financial data, so
+   when security conflicts with speed, features or cost, security wins (ADR-020).
 
 Arthur accepted ADRs 005 to 018 as recommended on 2026-11-02.
 
