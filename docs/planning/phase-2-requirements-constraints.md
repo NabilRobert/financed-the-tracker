@@ -186,7 +186,7 @@ flowchart LR
 
 | Table | Holds |
 |---|---|
-| `person` | BSUID, optional phone, consent time, status |
+| `person` | BSUID or a number awaiting its first message, consent time and notice version, suspension time |
 | `inbound_message` | Meta's message id (unique), person, time, outcome. No text |
 | `entry` | Person, direction, `amount_rupiah`, category, description, `occurred_on`, `voided_at`, source (`rules` or `model`) |
 | `pending_entry` | A proposal waiting for **Ya**, with its expiry |
@@ -195,6 +195,7 @@ flowchart LR
 | `budget_warning` | Unique on person, category, month, threshold |
 | `monthly_push` | Unique on person, month |
 | `outbound_message` | Meta's id, category, status, for counting replies |
+| `unknown_sender_count` | Strangers per day, and nothing else |
 
 ## Constraints
 

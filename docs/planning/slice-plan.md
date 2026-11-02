@@ -34,11 +34,26 @@ mutation-checked once. Each slice updates `docs/guide.md`.
 | **1. Parser and corpus** | Repo scaffold, README, CI, complexity rules; `parse_amount`; `parse_message`; the corpus | See below | $0 |
 | **2. Ledger** | Schema and migrations; row-level security; write, void, categories, keywords; summaries and budgets in SQL; a test that no money is held in a float | Fixture summaries match to the rupiah; the isolation suite passes, mutation-checked | $0 |
 | **3. WhatsApp channel** | pywa handlers; signature check; message-id idempotency; allow-list; consent; buttons; commands; `bantuan` | Signed fixtures cover every path; replays add nothing; a forged request is refused; one live round trip on the test number through a local tunnel | $0 |
-| **4. Privacy and operations** | `hapus data saya`; `ekspor`; card-number refusal; reply counter and cap; spans; `/healthz`; no-content tests | Deletion leaves zero rows; the cap fires in a test; no message text in logs or spans | $0 |
+| **4. Privacy and operations** | `hapus data saya`; `ekspor`; card-number refusal; reply counter and cap; send retries (R3); message outcomes; spans; `/healthz`; no-content tests for spans and alerts | Deletion leaves zero rows; the cap fires in a test; no message text in logs or spans | $0 |
 | **5. Deploy, gate, then dogfood** | Container; Caddy; backups included; probes through the systems-monitoring session; [the gate](#the-real-data-gate); then Arthur alone for 2 weeks | Alerts fired on purpose and received; a restart loses nothing; the gate passes; misses are counted and turned into corpus cases | $0 |
 | **6. Invite and monthly push** | Dedicated number; the approved template; the monthly job; up to 4 invitations, sent by Arthur | The push can't send twice; deletion checked with a real invited person's agreement | Under Rp3,000 a month |
 | **7. Model fallback (Should)** | The typed proposal; validation; the Inspect task | Zero invented amounts in the eval; Arthur's OK for each paid run | About $0.10, not budgeted yet |
 | **8. Evidence and write-up** | Results from records; JOURNEY; portfolio entry (with the portfolio session) | Every number traces to a file; a privacy check passes | $0 |
+
+## The live check
+
+Slice 3's code is finished, and proved with signed fixtures only. Its one live round
+trip waits for P3: a Meta developer app, its test number, and its secrets in a local
+`.env`, plus a tunnel. Only invented messages go through it.
+
+It has to confirm what the fixtures assume about Meta's payloads:
+
+- every message has a `user_id` in `contacts`, or pywa can't build the update and we
+  answer 500;
+- `from_user_id` is on the message, and how a batch pairs messages with contacts;
+- the number-change message carries `previous_user_id` and `user_id` as ADR-008 read
+  them, and arrives without `contacts`;
+- buttons work, and sending to a BSUID works.
 
 ## Security done-when for each slice
 

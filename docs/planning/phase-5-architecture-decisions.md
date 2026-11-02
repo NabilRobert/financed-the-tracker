@@ -26,7 +26,7 @@ knows no slang. Neither fits, so there is nothing to depend on.
 
 | Part | Reused | Built (and why) |
 |---|---|---|
-| WhatsApp webhooks and messages | **pywa** (ADR-004), approved in Juku's Phase 5 | Handlers only |
+| WhatsApp webhooks and messages | **pywa** (ADR-004), approved in Juku's Phase 5 | Handlers, and the routes in front of them (ADR-021) |
 | HTTP, validation, data, CLI, tests | Arthur's standard stack | — |
 | Model calls, if on | **PydanticAI**, set up as in Juku | The typed proposal |
 | Evals | **Inspect AI** for the model; pytest for the rules (ADR-014) | The corpus |
@@ -108,8 +108,19 @@ pywa for its WhatsApp channel.
   database's unique key on Meta's message id is what counts (L5).
 - Handler errors are logged and Meta still gets a 200, so a failure can
   vanish. So failures are recorded and alert (R4).
-- Handlers appear to run before the response. Spike 1 confirms this, and
-  that our handler is fast enough.
+- Handlers appear to run before the response. Spike 1 confirmed this: they run
+  inside the request.
+
+**Spike 1 found more, read from pywa 4.5.0's code (see ADR-021):**
+- Its signature check is constant-time, but its verify-token check isn't.
+- It reads only `entry[0].changes[0].value.messages[0]`, so a webhook carrying
+  several messages loses the rest with no error.
+- Its in-memory duplicate cache would swallow Meta's retry after a failure.
+- At debug level it logs whole messages, and `PYWA_LOG_LEVEL` can turn that on.
+- `User.from_contact` needs `user_id`, so a contact without one fails to parse.
+
+Arthur may want to report the batch behaviour upstream, once the live check shows
+whether Meta really batches.
 
 **Risk:** PyPI shows one maintainer account. It's a thin layer over Meta's
 HTTP API, so moving to httpx later would mean replacing the webhook and
@@ -454,6 +465,37 @@ and dogfooding. A slice can slip for a security reason, and the plan accepts tha
 - *Keeping the threat model private:* showing the reasoning is part of the
   portfolio. Live findings stay private until fixed.
 
+## ADR-021: Our own webhook routes, with pywa behind them
+
+**Decision (slice 3):** two FastAPI routes check the size and the signature, split a
+webhook into single messages, and hand each to pywa's `webhook_update_handler`. pywa
+still parses updates, runs the typed handlers and sends replies, so this is the glue
+ADR-004 expected.
+
+**Why:** spike 1. pywa's own routes answer 200 when a handler fails, which loses the
+message, and read one message per webhook. Both matter more for a ledger than for
+most bots. Security also needed the checks to run before any parsing, and to fail
+closed in our code, not in a default.
+
+**Also:**
+- pywa's logs are contained: below ERROR they're dropped, and an exception becomes
+  one line with its type, which marks the request failed (T14, R4).
+- Settings use plain Pydantic, read from the environment, with no new dependency.
+- A person starts as a number on the allow-list. The first message links the BSUID
+  and drops the number, through one `SECURITY DEFINER` function.
+- `tracker_resolve_sender` returns nobody for a suspended person, so one check stops
+  everything.
+- Message ids aren't stored before consent, so a repeat of a pre-consent message sends
+  the notice again. Phase 2 says nothing is stored before **Setuju**, and that wins.
+- A failed reply is logged and answers 200: the entry is safe, and a 500 would only
+  repeat a message already handled. Retries come in slice 4.
+
+**Rejected:**
+- *pywa's server with `validate_updates`:* the failures above.
+- *Replacing pywa with httpx:* we'd hand-write the payload models and sending that
+  it does well.
+- *`pydantic-settings`:* a dependency for eight lines.
+
 ## Decisions
 
 | # | Decision | Rejected | Status |
@@ -478,6 +520,7 @@ and dogfooding. A slice can slip for a security reason, and the plan accepts tha
 | 018 | One capped container, existing Postgres, after Juku's deploy | New server, serverless | **Accepted** |
 | 019 | Async SQLAlchemy with `text()`, two logins, a scope on every call | ORM models, psycopg, `FORCE` RLS | **Made in slice 2** |
 | 020 | Security wins over speed, features and cost; a gate before real data | Security as an equal concern, field encryption, a paid test | **Settled** |
+| 021 | Our own webhook routes, with pywa behind them | pywa's server, httpx alone, `pydantic-settings` | **Made in slice 3** |
 
 ## The first slice
 

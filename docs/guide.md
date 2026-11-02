@@ -1,7 +1,54 @@
 # Guide
 
-This guide explains the repo in plain English. It covers the parser (slice 1)
-and the ledger (slice 2). Later slices will add to it.
+This guide explains the repo in plain English. It covers the WhatsApp channel
+(slice 3), the parser (slice 1) and the ledger (slice 2). Later slices will add to it.
+
+## The flow: a webhook arrives
+
+Meta posts `makan 25rb` to `/webhook`. This is the whole journey, up to the parser
+and the ledger, which have their own sections below.
+
+```mermaid
+flowchart TD
+    M["Meta posts a webhook"] --> S{"receive:<br/>small enough and signed?"}
+    S -->|no| R["401, 403 or 413: nothing runs"]
+    S -->|yes| P["split_into_single_messages"]
+    P --> H["pywa builds a typed Message and calls on_message"]
+    H --> C["Conversation.handle_text"]
+    C --> A{"_admit:<br/>known person, under the limit?"}
+    A -->|no| Q["Silence, or one notice"]
+    A -->|yes| N{"consented?"}
+    N -->|no| O["The notice, with Setuju and Tidak"]
+    N -->|yes| W["claim_message, then a command or the parser"]
+    W --> T["Commit"]
+    T --> B["_send: the reply goes out"]
+```
+
+1. **Check before reading.** `tracker/channel/webhook.py: receive` caps the body at
+   256 KB, then compares the signature in `_is_signed`. Nothing is parsed before
+   that, so a forged request reaches no code.
+2. **Split.** `split_into_single_messages` makes one body per message, because pywa
+   reads only the first. Each message goes with the sender whose id matches. If none
+   does, the webhook fails rather than guessing, because a guess could write to the
+   wrong ledger.
+3. **Hand to pywa.** It builds a typed `Message` and calls `on_message` in
+   `tracker/channel/bot.py`, which ignores groups and reactions.
+4. **Find the person.** `tracker/channel/conversation.py: _admit` asks the database
+   who this is (`resolve_sender`). A stranger leaves a count and gets silence. Then
+   `MessageLimiter.admit` checks the rate limits.
+5. **Check consent.** Without it, the person gets the notice and nothing is stored.
+6. **Claim the message.** `claim_message` records Meta's id. A repeat stops here.
+7. **Answer.** `run_command` handles commands. Anything else goes to `parse_message`
+   and is written, asked about, or explained (`_log_message`).
+8. **Commit, then reply.** The transaction ends, then `_send` calls Meta. If sending
+   fails, the entry is safe and the failure is logged.
+
+If anything fails before the commit, the transaction rolls back and the webhook
+answers 500, so Meta sends it again. That's why pywa's duplicate cache is off.
+
+**A question** (`kopi 25`, or anything above Rp10,000,000) becomes a row in
+`pending_entry` with buttons. Tapping one calls `confirm_pending_entry`, a single
+update that can only win once, so a double tap writes one entry.
 
 ## The flow: one message, start to finish
 
@@ -179,6 +226,12 @@ costs one tap. A wrong amount costs trust in every total after it.
 | **Repeat delivery** | Meta sends the same message twice. The unique message id makes the second do nothing | `inbound_message` |
 | **Taught word** | A word a person linked to a category with `kategori transport` | `category_keyword` |
 | **Period** | A date range, from a start up to but not including an end | `summaries.py: Period` |
+| **Webhook** | Meta's HTTP call to us when a message arrives | `channel/webhook.py` |
+| **Signature** | A hash of the body made with a secret only Meta and we hold, proving Meta sent it | `_is_signed` |
+| **Allow-list** | Only people Arthur added can use the bot | `person`, `tracker/cli.py` |
+| **Pending entry** | An entry waiting for a person's tap, for up to 24 hours | `ledger/pending.py` |
+| **Consent notice** | What a person reads and agrees to before anything is stored. Its text is pinned to a version | `replies.py` |
+| **Suspension** | Arthur stops every read and write for a person | `tracker suspend` |
 | **Threat model** | The list of what could go wrong, and what stops each thing | `docs/planning/threat-model.md` |
 | **Real-data gate** | The checklist that must pass before any real person's data enters the system | `docs/planning/slice-plan.md` |
 | **Fail closed** | When a check can't run, refuse rather than let the request through | Slice 3's webhook |
@@ -201,6 +254,13 @@ costs one tap. A wrong amount costs trust in every total after it.
 | Add a table | A migration, with `person_id`, row-level security and the least grants; add it to `PERSON_TABLES` in `tests/test_ledger_isolation.py` |
 | Change the starter categories | `SPENDING_KEYWORDS` in `keywords.py`; a new person picks them up from `people.py: STARTER_CATEGORIES` |
 | Change the warning levels | `WARNING_PERCENTS` in `budgets.py`, and the check on `budget_warning` |
+| Change what the bot says | `tracker/channel/replies.py` |
+| Change the consent notice | Its text and `CONSENT_NOTICE_VERSION` together, then the pinned hash in `tests/test_channel_security.py`. People agreed to the old text |
+| Add a command | `run_command` in `channel/commands.py`, and `COMMAND_WORDS` in `keywords.py` so the parser leaves it alone |
+| Add a button | A payload in `channel/buttons.py`, then a branch in `_press_button` |
+| Change a rate limit | `channel/ratelimit.py` |
+| Add a person | `tracker add 628...`, with the owner's login |
+| Stop a person | `tracker suspend <id>`, then `tracker resume <id>` |
 | Add a threat or a control | A row in `docs/planning/threat-model.md`, with its proof and owning slice |
 | Add a corpus case | A line in `dev.jsonl`, following `tests/corpus/README.md`. Never edit `holdout.jsonl` to make a score better |
 
@@ -217,11 +277,14 @@ costs one tap. A wrong amount costs trust in every total after it.
   it, and undo is one tap.
 - **`cepek` always asks.** Some speakers mean Rp100, others Rp100,000, so the
   bot offers both. It's one line in `AMBIGUOUS_SPELLED_AMOUNTS`.
-- **L6 isn't here.** Asking before entries above Rp10,000,000 needs a pending
-  entry, so it comes with buttons in slice 3.
-- **Consent isn't checked yet.** I4 arrives with the consent flow in slice 3, so
-  nothing may call `write_entry` before that.
 - **Deleting a person isn't here.** `hapus data saya` is slice 4, which needs a
-  way past "the app can delete nothing".
+  way past "the app can delete nothing". Until then the bot points to Arthur.
+- **A failed reply isn't retried.** The entry is safe, but the person isn't told.
+  Retries come in slice 4.
+- **An edited message changes nothing.** WhatsApp lets people edit a message, and
+  the bot keeps the first version.
+- **A repeat of a message before consent sends the notice again.** Nothing may be
+  stored before **Setuju**, and that includes the message id.
+- **The channel hasn't met Meta.** See "The live check" in the slice plan.
 - **Two entries at the same moment can miss a warning.** Neither sees the other
   before it commits. The next entry in that category gives the warning.
