@@ -399,9 +399,3 @@ async def test_kategori_that_does_not_exist_says_so(bot: Bot, member: str) -> No
 async def test_bantuan_gives_a_path_to_a_human(bot: Bot, member: str) -> None:
     await bot.say(member, "bantuan")
     assert HUMAN_CONTACT in bot.waha.texts[0]
-
-
-@pytest.mark.parametrize("message", ["hapus data saya", "ekspor"])
-async def test_a_command_not_built_yet_says_who_to_ask(bot: Bot, member: str, message: str) -> None:
-    await bot.say(member, message)
-    assert HUMAN_CONTACT in bot.waha.texts[0]

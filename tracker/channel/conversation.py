@@ -4,7 +4,8 @@ Each handler returns the text to send, or None for silence. Everything happens i
 transaction that commits before the caller sends anything, so a crash can't lose an
 entry that a person was told about (ADR-013).
 
-Reply buttons don't work on WAHA, so answers are typed. They carry no id: `ya`, `1`, `2`
+A message that looks like it holds a card number stops first, so nothing later can
+store it (T13). Reply buttons don't work on WAHA, so answers are typed. They carry no id: `ya`, `1`, `2`
 and `batal` can only reach the sender's own newest question or newest entry, which is
 why a new entry closes any open question, and `batal` never reaches past the newest.
 """
@@ -17,11 +18,21 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.channel import replies
 from tracker.channel.commands import run_command
-from tracker.channel.gateway import IncomingMessage, Sender
+from tracker.channel.gateway import Attachment, IncomingMessage, Sender
+from tracker.channel.leaving import answer_leaving
 from tracker.channel.ratelimit import Admission, MessageLimiter
 from tracker.channel.replies import CONSENT_NOTICE, CONSENT_NOTICE_VERSION
+from tracker.channel.tracing import traced
 from tracker.ledger.categories import resolve_category
-from tracker.ledger.entries import NewEntry, VoidOutcome, claim_message, insert_entry, void_entry
+from tracker.ledger.entries import (
+    MessageOutcome,
+    NewEntry,
+    VoidOutcome,
+    claim_message,
+    insert_entry,
+    record_outcome,
+    void_entry,
+)
 from tracker.ledger.pending import (
     NewPendingEntry,
     OpenQuestion,
@@ -44,6 +55,7 @@ from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.ledger.summaries import today_in_jakarta
 from tracker.parsing.amount import AmbiguityReason, clean_text
 from tracker.parsing.message import AmbiguousEntry, ParsedEntry, parse_message
+from tracker.parsing.sensitive import looks_sensitive
 
 MAX_UNCONFIRMED_RUPIAH: Final = 10_000_000  # L6.
 MAX_READINGS_TO_OFFER: Final = 2  # More than this can't be answered with one word.
@@ -52,6 +64,12 @@ DECLINE_WORD: Final = "tidak"
 YES_WORD: Final = "ya"
 CANCEL_WORD: Final = "batal"
 CHOICE_WORDS: Final[dict[str, int]] = {"1": 0, "2": 1}
+
+
+@dataclass(frozen=True)
+class Answer:
+    reply: str | Attachment
+    outcome: MessageOutcome
 
 
 @dataclass(frozen=True)
@@ -71,7 +89,7 @@ class Conversation:
             return person_id
         return replies.RATE_LIMITED if admission is Admission.REFUSED_WITH_NOTICE else None
 
-    async def handle(self, sender: Sender, message: IncomingMessage) -> str | None:
+    async def handle(self, sender: Sender, message: IncomingMessage) -> str | Attachment | None:
         admitted = await self._admit(sender)
         if not isinstance(admitted, int):
             return admitted
@@ -82,19 +100,28 @@ class Conversation:
             if inbound_message_id is None:
                 return None
             if message.text is None:
-                return replies.NOT_TEXT
-            return await self._answer(scope, inbound_message_id, message.text, today_in_jakarta(message.sent_at))
+                answer = Answer(replies.NOT_TEXT, MessageOutcome.NOT_TEXT)
+            else:
+                today = today_in_jakarta(message.sent_at)
+                answer = await self._answer(scope, inbound_message_id, message.text, today)
+            await record_outcome(scope, inbound_message_id, answer.outcome)
+            return answer.reply
 
-    async def _answer(self, scope: PersonScope, inbound_message_id: int, text: str, today: date) -> str:
+    async def _answer(self, scope: PersonScope, inbound_message_id: int, text: str, today: date) -> Answer:
+        if looks_sensitive(text):
+            return Answer(replies.SENSITIVE_NUMBER, MessageOutcome.REFUSED)
         word = clean_text(text)
         question = await find_open_question(scope)
         if question is not None and word in (YES_WORD, CANCEL_WORD, *CHOICE_WORDS):
-            return await _answer_question(scope, question, word)
+            return Answer(await _answer_question(scope, question, word), MessageOutcome.ANSWER)
         if word == CANCEL_WORD:
-            return await _undo_newest(scope)
+            return Answer(await _undo_newest(scope), MessageOutcome.ANSWER)
+        leaving_reply = await answer_leaving(scope, word)
+        if leaving_reply is not None:
+            return Answer(leaving_reply, MessageOutcome.COMMAND)
         command_reply = await run_command(scope, text, today, self.human_contact)
         if command_reply is not None:
-            return command_reply
+            return Answer(command_reply, MessageOutcome.COMMAND)
         await close_open_questions(scope)  # A late `ya` must not answer a question from before this.
         return await _log_message(scope, inbound_message_id, text, today)
 
@@ -150,26 +177,30 @@ async def _ask(
     await create_pending_entry(scope, inbound_message_id, pending)
 
 
-async def _log_message(scope: PersonScope, inbound_message_id: int, text: str, today: date) -> str:
-    parsed = parse_message(text)
+async def _log_message(scope: PersonScope, inbound_message_id: int, text: str, today: date) -> Answer:
+    with traced("tracker.parse") as span:
+        parsed = parse_message(text)
+        span.set_attribute("tracker.parser_path", "failed" if parsed is None else "rules")
     if parsed is None:
-        return replies.NOT_UNDERSTOOD
+        return Answer(replies.NOT_UNDERSTOOD, MessageOutcome.UNPARSED)
     if isinstance(parsed, AmbiguousEntry):
         return await _ask_about(scope, inbound_message_id, parsed, today)
     if parsed.amount_rupiah > MAX_UNCONFIRMED_RUPIAH:
         await _ask(scope, inbound_message_id, parsed, today, (parsed.amount_rupiah,))
-        return replies.large_amount_question(parsed.amount_rupiah)
-    category = await resolve_category(scope, parsed.description, parsed.direction, parsed.category)
-    entry = NewEntry(parsed.amount_rupiah, parsed.direction, category, parsed.description, today)
-    written = await insert_entry(scope, inbound_message_id, entry)
-    return replies.entry_written(parsed.direction, written.category, parsed.amount_rupiah, written.budget_warning)
+        return Answer(replies.large_amount_question(parsed.amount_rupiah), MessageOutcome.QUESTION)
+    with traced("tracker.write"):
+        category = await resolve_category(scope, parsed.description, parsed.direction, parsed.category)
+        entry = NewEntry(parsed.amount_rupiah, parsed.direction, category, parsed.description, today)
+        written = await insert_entry(scope, inbound_message_id, entry)
+    reply = replies.entry_written(parsed.direction, written.category, parsed.amount_rupiah, written.budget_warning)
+    return Answer(reply, MessageOutcome.ENTRY)
 
 
-async def _ask_about(scope: PersonScope, inbound_message_id: int, entry: AmbiguousEntry, today: date) -> str:
+async def _ask_about(scope: PersonScope, inbound_message_id: int, entry: AmbiguousEntry, today: date) -> Answer:
     """Offers the readings when one word can settle it, and explains when only a new message can."""
     reason, candidates = entry.ambiguity.reason, entry.ambiguity.candidates
     can_offer = 0 < len(candidates) <= MAX_READINGS_TO_OFFER and reason is not AmbiguityReason.SEVERAL_AMOUNTS
     if not can_offer:
-        return replies.refusal(reason)
+        return Answer(replies.refusal(reason), MessageOutcome.REFUSED)
     await _ask(scope, inbound_message_id, entry, today, candidates)
-    return replies.question(reason, candidates)
+    return Answer(replies.question(reason, candidates), MessageOutcome.QUESTION)

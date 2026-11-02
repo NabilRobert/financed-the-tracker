@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.ledger.engine import create_engine
 from tracker.ledger.export import export_person_csv
-from tracker.ledger.people import create_person, set_suspended
+from tracker.ledger.people import create_person, delete_person, set_suspended
+from tracker.ledger.retention import PurgeResult, purge_expired
 
 OWNER_URL_ENV = "TRACKER_MIGRATOR_DATABASE_URL"
 OWNER_ONLY_FILE_MODE = 0o600  # It holds someone's finances.
@@ -61,6 +62,27 @@ def export(person_id: int, path: Path) -> None:
     with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as file:
         file.write(csv_text)
     typer.echo(f"Wrote {path}.")
+
+
+@app.command()
+def purge() -> None:
+    """Delete what PR6 says is past keeping. Run it daily from cron."""
+    result: PurgeResult = _run_as_owner(purge_expired)
+    typer.echo(f"Removed {result.pending_entries} pending entries and {result.message_ids} message ids.")
+
+
+@app.command()
+def delete(
+    person_id: int, yes: Annotated[bool, typer.Option("--yes", help="Confirm: this can't be undone.")] = False
+) -> None:
+    """Delete everything about a person, for when WhatsApp isn't there to ask through."""
+    if not yes:
+        typer.echo("This can't be undone. Add --yes to go ahead.", err=True)
+        raise typer.Exit(code=1)
+    if not _run_as_owner(lambda engine: delete_person(engine, person_id)):
+        typer.echo(f"No person {person_id}.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo("Deleted.")
 
 
 @app.command()
