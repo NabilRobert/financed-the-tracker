@@ -19,7 +19,7 @@ from webhook_fixtures import API_KEY, SESSION, WAHA_URL, WEBHOOK_KEY, FakeWaha, 
 from tracker.channel import conversation as conversation_module
 from tracker.channel import webhook as webhook_module
 from tracker.channel.gateway import Attachment
-from tracker.channel.ratelimit import MessageLimiter
+from tracker.channel.ratelimit import MAX_REPLIES_PER_DAY, MAX_REPLIES_PER_MINUTE, MessageLimiter
 from tracker.channel.replies import DELETE_CONFIRM, DELETE_HOW, DELETED, SENSITIVE_NUMBER
 from tracker.channel.settings import Settings
 from tracker.channel.tracing import SERVICE_NAME, configure_tracing, create_tracer_provider
@@ -28,9 +28,10 @@ from tracker.channel.webhook import create_app
 from tracker.cli import OWNER_URL_ENV
 from tracker.cli import app as cli_app
 from tracker.ledger.engine import create_engine
+from tracker.ledger.entries import MessageOutcome, record_outcome
 from tracker.ledger.people import create_person, delete_person_in_scope
 from tracker.ledger.retention import BARE_MESSAGE_ID_RETENTION, purge_expired
-from tracker.ledger.scope import person_transaction
+from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.parsing.message import ParsedEntry, parse_message
 from tracker.parsing.sensitive import looks_sensitive
 
@@ -115,6 +116,8 @@ async def test_a_deletion_leaves_only_the_id_behind(owner_engine: AsyncEngine, b
     await bot.say(member, "hapus semua")
     async with owner_engine.connect() as connection:
         result = await connection.execute(text("SELECT * FROM deleted_person WHERE person_id = :id"), {"id": person_id})
+        rows = result.all()
+    assert len(rows) == 1
     assert set(result.keys()) == {"person_id", "deleted_at"}
 
 
@@ -245,6 +248,10 @@ def test_ordinary_money_is_not_mistaken_for_a_card(message: str) -> None:
     assert not looks_sensitive(message)
 
 
+def test_two_groups_of_digits_are_two_numbers_not_a_card() -> None:
+    assert not looks_sensitive("nomor 123456 789015")
+
+
 def test_a_twelve_digit_number_counts_only_if_it_passes_luhn() -> None:
     assert looks_sensitive("nomor 123456789015") is True
     assert looks_sensitive("nomor 123456789016") is False
@@ -355,7 +362,28 @@ async def test_each_message_records_its_outcome(
     assert stored == outcome
 
 
+async def test_the_code_records_an_outcome_only_on_your_own_message(
+    owner_engine: AsyncEngine, bot: Bot, member: str
+) -> None:
+    event = text_event(member, "makan 25rb")
+    await bot.post(event)
+    other = await create_person(owner_engine, whatsapp_id=new_lid())
+    async with owner_engine.begin() as connection:
+        inbound_id = await connection.scalar(
+            text("SELECT id FROM inbound_message WHERE meta_message_id = :id"), {"id": event["payload"]["id"]}
+        )
+        await record_outcome(PersonScope(connection, other), int(inbound_id or 0), MessageOutcome.REFUSED)
+        outcome = await connection.scalar(
+            text("SELECT outcome FROM inbound_message WHERE id = :id"), {"id": inbound_id}
+        )
+    assert outcome == "entry"
+
+
 # R7: the reply limit that replaces Meta's cap.
+def test_the_reply_limits_are_the_ones_the_plan_states() -> None:
+    assert (MAX_REPLIES_PER_MINUTE, MAX_REPLIES_PER_DAY) == (30, 500)
+
+
 async def test_replies_stop_at_the_limit_across_everyone() -> None:
     limiter = MessageLimiter(replies_per_minute=2, replies_per_day=100)
     assert [await limiter.may_reply() for _ in range(3)] == [True, True, False]
@@ -382,6 +410,10 @@ async def test_past_the_reply_limit_entries_are_still_logged(
 
 
 # R3: send retries.
+def test_a_send_is_tried_three_times() -> None:
+    assert SEND_ATTEMPTS == 3
+
+
 def gateway_for(waha: FakeWaha) -> WahaGateway:
     client = httpx.AsyncClient(transport=waha.transport())
     return WahaGateway(client, WAHA_URL, API_KEY, SESSION, WEBHOOK_KEY, retry_wait_ms=0)
