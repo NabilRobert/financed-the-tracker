@@ -100,7 +100,7 @@ time.
 | 9 | Consent is recorded, with its notice version, and the notice warns of the unofficial channel | Tests | Tested |
 | 10 | An adversarial pass is done, with every finding fixed | A written pass over bad input, failure paths and restarts, plus the threat model's Planned rows | Planned, slice 5 |
 | 11 | The independent review is done, with every finding fixed | Its report, kept private until fixed ([who does it](threat-model.md#independent-review)) | Planned, slice 5 |
-| 12 | The server is ready for this data (P4) | Confirmed by the server work | Open |
+| 12 | The server is ready for this data (P4): at least the backup key rotated and no plaintext dump left | Confirmed by the server work, not only by Arthur | Open: not yet confirmed (2026-11-03) |
 | 13 | **WhatsApp's terms are decided (P6):** the question section 4.2 asked, under WhatsApp's own terms | Arthur's written decision | Open |
 | 14 | The threat model is current | Every row is Done, or is listed under "What we accept" | Open |
 | 15 | WAHA's API and dashboard are never public | A probe from outside finds nothing; dashboard and Swagger off | Checked locally; probe on the server |

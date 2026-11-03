@@ -11,7 +11,7 @@ secrets stay in the server's own `.env` files.
 
 | Container | Reachable from | Why |
 |---|---|---|
-| `app` | The private network, and the server's loopback on port 8099 for the probe | The tracker |
+| `app` | The private network, the monitoring stack's network as `tracker-app`, and the server's loopback on port 8099 for Arthur's checks | The tracker |
 | `waha` | The private network, and the server's loopback on port 3000 over an SSH tunnel | WhatsApp, as a linked device |
 
 Nothing is published to the internet. WAHA connects out to WhatsApp, and calls the app at
@@ -31,6 +31,12 @@ Nothing is published to the internet. WAHA connects out to WhatsApp, and calls t
    - `WAHA_UNUSED_PANEL_PASSWORD`: a random value nobody uses. Without it, WAHA prints
      generated panel passwords to its log at startup.
 4. `mkdir -m 700 ops/waha-sessions && sudo chown 10001:10001 ops/waha-sessions`.
+5. `sudo install -d -m 750 -o 10001 /var/log/tracker`, for the log Vector reads.
+6. The monitoring stack is up first: the app joins its network, `systems-monitoring_default`.
+7. Postgres accepts the two logins from the Docker bridge's subnet only: `listen_addresses`,
+   `pg_hba.conf` lines for that subnet, and a ufw rule for 5432 from it. Servers & security
+   owns this.
+8. AIDE excludes `ops/waha-sessions`, or its daily report lists the WhatsApp session files.
 
 ## 2. Build and migrate
 
@@ -98,10 +104,15 @@ app's database password.
 
 ## 8. Monitoring
 
-Through the systems-monitoring session:
-- a probe of `http://127.0.0.1:8099/healthz`, and the drift check on its `version`;
-- an alert on `channel_stopped` in the app's log: perhaps a ban;
-- a dead-man alert when no `message_handled` line has appeared for a day;
-- an alert on repeated `webhook_failed` or `reply_failed` lines.
+Through the systems-monitoring session, which agreed these on 2026-11-03:
+- a probe of `http://tracker-app:8099/healthz` over its own network, and the drift check
+  on its `version`;
+- from `/var/log/tracker/app.log`, read without the Docker socket:
+  - `channel_stopped`, as a page: perhaps a ban;
+  - a dead-man alert when no `message_handled` line has appeared for a day;
+  - an alert on repeated `webhook_failed` or `reply_failed` lines.
+
+The backup's heartbeat goes to an outside service, as MCP-backbone's does, set in
+`BACKUP_HEALTHCHECK_URL`. It alerts there, not through Telegram.
 
 Fire each alert on purpose once, and confirm it arrives.

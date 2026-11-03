@@ -151,7 +151,8 @@ and every total ignores voided entries.
 ## How it runs on the server
 
 Two containers, in `ops/compose.yaml`: the app and WAHA. Nothing is published to the
-internet. WAHA connects out to WhatsApp, and calls the app over a private network. Both
+internet. WAHA connects out to WhatsApp, and calls the app over a private network. The
+monitoring stack reaches the app over its own network, and reads its log from a file. Both
 run as user 10001 with a read-only root. The app's environment never holds the owner's
 login: migrations and Arthur's CLI run in separate, one-off containers.
 

@@ -4,6 +4,7 @@ The server half (probes, a restore drill, permissions) is in docs/runbook-deploy
 each of its checks is a line of the real-data gate.
 """
 
+import logging
 import re
 import stat
 from pathlib import Path
@@ -19,7 +20,7 @@ from tracker.cli import app as cli_app
 from tracker.ledger.deletions import DeletionListError, export_deleted_ids, read_deleted_ids, reapply_deletions
 from tracker.ledger.people import create_person
 from tracker.ledger.summaries import today_in_jakarta
-from tracker.serve import DEFAULT_BIND_HOST, bind_host
+from tracker.serve import DEFAULT_BIND_HOST, bind_host, configure_logging
 
 REPO_ROOT = Path(__file__).parent.parent
 DOCKERFILE = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -83,6 +84,41 @@ def test_only_loopback_ports_are_published() -> None:
     ports = _published_ports()
     assert len(ports) == 2
     assert all(entry.startswith("127.0.0.1:") for entry in ports)
+
+
+def test_the_monitoring_stack_reaches_the_app_without_a_published_port() -> None:
+    assert "aliases: [tracker-app]" in _service("app")
+    assert "name: systems-monitoring_default" in COMPOSE
+    assert "external: true" in COMPOSE
+
+
+def test_the_app_writes_its_log_where_monitoring_reads_it_without_the_docker_socket() -> None:
+    app = _service("app")
+    assert "TRACKER_LOG_FILE: /var/log/tracker/app.log" in app
+    assert "/var/log/tracker:/var/log/tracker" in app
+    assert "docker.sock" not in COMPOSE
+
+
+def test_log_lines_reach_the_file_when_one_is_set(tmp_path: Path) -> None:
+    log_file = tmp_path / "app.log"
+    try:
+        configure_logging({"TRACKER_LOG_FILE": str(log_file)})
+        logging.getLogger("tracker.channel").info("message_handled outcome=entry")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        assert "INFO tracker.channel message_handled outcome=entry" in log_file.read_text(encoding="utf-8")
+    finally:
+        for handler in logging.getLogger().handlers:
+            handler.close()
+        logging.getLogger().handlers.clear()
+
+
+def test_without_a_log_file_only_stdout_is_used() -> None:
+    try:
+        configure_logging({})
+        assert [type(handler) for handler in logging.getLogger().handlers] == [logging.StreamHandler]
+    finally:
+        logging.getLogger().handlers.clear()
 
 
 def test_the_app_container_is_locked_down() -> None:
