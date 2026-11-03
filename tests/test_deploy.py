@@ -294,5 +294,14 @@ async def test_each_message_logs_a_content_free_heartbeat(
 
 def test_the_runbook_names_every_server_check() -> None:
     runbook = (REPO_ROOT / "docs" / "runbook-deploy.md").read_text(encoding="utf-8")
-    for step in ("deletions-reapply", "deletions-export", "backup_tracker.sh", "probe", "sentinel", "QR"):
+    for step in (
+        "deletions-reapply",
+        "deletions-export",
+        "backup_tracker.sh",
+        "probe",
+        "sentinel",
+        "QR",
+        "install -d -m 755 -o 10001 /var/log/tracker",
+        "stat -c '%a' /var/log/tracker /var/log/tracker/app.log",
+    ):
         assert step in runbook

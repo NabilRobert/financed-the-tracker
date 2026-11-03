@@ -31,7 +31,9 @@ Nothing is published to the internet. WAHA connects out to WhatsApp, and calls t
    - `WAHA_UNUSED_PANEL_PASSWORD`: a random value nobody uses. Without it, WAHA prints
      generated panel passwords to its log at startup.
 4. `mkdir -m 700 ops/waha-sessions && sudo chown 10001:10001 ops/waha-sessions`.
-5. `sudo install -d -m 750 -o 10001 /var/log/tracker`, for the log Vector reads.
+5. `sudo install -d -m 755 -o 10001 /var/log/tracker`, for the log Vector reads. Vector runs as
+   uid 65534, so the folder must be 755 and `app.log` 644. A tighter umask would hide the log
+   from it with no error.
 6. The monitoring stack is up first: the app joins its network, `systems-monitoring_default`.
 7. Postgres accepts the two logins from the Docker bridge's subnet only: `listen_addresses`,
    `pg_hba.conf` lines for that subnet, and a ufw rule for 5432 from it. Servers & security
@@ -73,6 +75,7 @@ fixtures, and fix the adapter before going further.
 | 16 | `curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:3000/api/sessions` with no key: expect 401 |
 | 17 | `stat -c '%a %u' ops/waha-sessions` shows `700 10001`. Search a backup's listing for `.sessions`: expect nothing |
 | 3 (WAHA) | `docker logs tracker-waha-1` holds no password, key or message text |
+| 3 (monitoring) | `stat -c '%a' /var/log/tracker /var/log/tracker/app.log` shows `755` and `644`, and the monitoring stack shows the app's lines |
 
 ## 6. Backups and the restore drill
 
