@@ -10,6 +10,7 @@ and `batal` can only reach the sender's own newest question or newest entry, whi
 why a new entry closes any open question, and `batal` never reaches past the newest.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Final
@@ -56,6 +57,8 @@ from tracker.ledger.summaries import today_in_jakarta
 from tracker.parsing.amount import AmbiguityReason, clean_text
 from tracker.parsing.message import AmbiguousEntry, ParsedEntry, parse_message
 from tracker.parsing.sensitive import looks_sensitive
+
+logger: Final = logging.getLogger("tracker.channel")
 
 MAX_UNCONFIRMED_RUPIAH: Final = 10_000_000  # L6.
 MAX_READINGS_TO_OFFER: Final = 2  # More than this can't be answered with one word.
@@ -105,7 +108,9 @@ class Conversation:
                 today = today_in_jakarta(message.sent_at)
                 answer = await self._answer(scope, inbound_message_id, message.text, today)
             await record_outcome(scope, inbound_message_id, answer.outcome)
-            return answer.reply
+        # The dead-man alert watches for this line, since a ban looks like a quiet day (E3).
+        logger.info("message_handled outcome=%s", answer.outcome)
+        return answer.reply
 
     async def _answer(self, scope: PersonScope, inbound_message_id: int, text: str, today: date) -> Answer:
         if looks_sensitive(text):

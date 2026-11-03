@@ -1,0 +1,90 @@
+# The tracker and WAHA on the server (ADR-018, ADR-022). Nothing here is reachable from the
+# internet: WAHA connects out to WhatsApp, and calls the tracker over the private network.
+#
+# - The app gets no owner login: `.env.app` holds only what it needs (T21). Migrations and
+#   Arthur's CLI run as the `tools` profile, with `.env.owner`.
+# - The app's port is bound to loopback, for the monitoring probe only.
+# - WAHA's port is bound to loopback, for linking the number over an SSH tunnel only (T36).
+# - ./waha-sessions holds the WhatsApp account: owner-only, and never in a backup (T35).
+name: tracker
+
+services:
+  app:
+    build:
+      context: ..
+      args:
+        TRACKER_VERSION: ${TRACKER_VERSION:?set it to the commit being deployed}
+    image: tracker-app:${TRACKER_VERSION}
+    restart: unless-stopped
+    env_file: .env.app
+    environment:
+      TRACKER_BIND_HOST: 0.0.0.0
+      WAHA_URL: http://waha:3000
+    ports:
+      - "127.0.0.1:8099:8099"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # The server's existing Postgres.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    networks: [tracker]
+
+  waha:
+    image: devlikeapro/waha:gows-2026.10.1@sha256:1f7faeb0227ad5edb5711f7058bfce807ea65e5f92234af0778e4db140f6eb46
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      # sha512:<hex of the key>, so the plain key isn't in this container's environment.
+      WAHA_API_KEY: ${WAHA_API_KEY_SHA512:?set the hashed API key}
+      WAHA_DASHBOARD_ENABLED: "False"
+      WHATSAPP_SWAGGER_ENABLED: "False"
+      # Both panels are off, but without these WAHA generates passwords and prints them to
+      # its log at startup, and the monitoring stack ships container logs. Checked locally.
+      WAHA_DASHBOARD_USERNAME: disabled
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_UNUSED_PANEL_PASSWORD:?set a random value nobody uses}
+      WHATSAPP_SWAGGER_USERNAME: disabled
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_UNUSED_PANEL_PASSWORD:?set a random value nobody uses}
+      WAHA_LOG_LEVEL: warn
+    volumes:
+      - ./waha-sessions:/app/.sessions
+    # The image runs as root by default. Checked locally: it works as this user, with a
+    # read-only root and no capabilities. ./waha-sessions must be owned by 10001.
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # A guess from WAHA's FAQ and third-party reports. Spike 3 measures it on the server.
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+    networks: [tracker]
+
+  migrate:
+    profiles: [tools]
+    image: tracker-app:${TRACKER_VERSION}
+    env_file: .env.owner
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["alembic", "upgrade", "head"]
+    network_mode: bridge
+
+  cli:
+    profiles: [tools]
+    image: tracker-app:${TRACKER_VERSION}
+    env_file: .env.owner
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["tracker"]
+    network_mode: bridge
+
+networks:
+  tracker: {}
