@@ -148,6 +148,19 @@ flowchart TD
 Undo is `entries.py: void_entry`. It sets `voided_at` and changes nothing else,
 and every total ignores voided entries.
 
+## How it runs on the server
+
+Two containers, in `ops/compose.yaml`: the app and WAHA. Nothing is published to the
+internet. WAHA connects out to WhatsApp, and calls the app over a private network. The
+monitoring stack reaches the app over its own network, and reads its log from a file. Both
+run as user 10001 with a read-only root. The app's environment never holds the owner's
+login: migrations and Arthur's CLI run in separate, one-off containers.
+
+A nightly `ops/backup/backup_tracker.sh` streams the database into `age` and up to S3, and
+keeps 14 days. Every 15 minutes, `tracker deletions-export` copies the ids of people who
+left to a file no backup touches, so `tracker deletions-reapply` can delete them again
+after a restore. `docs/runbook-deploy.md` has every step.
+
 ## Security comes first
 
 This holds people's financial records, so when security conflicts with speed,
@@ -250,6 +263,7 @@ costs one reply. A wrong amount costs trust in every total after it.
 | **Pending entry** | An entry waiting for a person's typed answer, for up to 24 hours | `ledger/pending.py` |
 | **Consent notice** | What a person reads and agrees to before anything is stored. Its text is pinned to a version | `replies.py` |
 | **Suspension** | Arthur stops every read and write for a person | `tracker suspend` |
+| **Restore drill** | Restoring a backup into an empty database, timed, to prove backups work | `docs/runbook-deploy.md` |
 | **Span** | One timed step in a trace. Ours hold names and outcomes, never content | `channel/tracing.py` |
 | **Outcome** | What became of a message, with no text, so misses can be counted | `inbound_message.outcome` |
 | **Reply limit** | A cap on sends across everyone. It replaced Meta's cap: a burst risks a ban | `channel/ratelimit.py` |
@@ -281,6 +295,8 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Add a command | `run_command` in `channel/commands.py`, and `COMMAND_WORDS` in `keywords.py` so the parser leaves it alone |
 | Replace WAHA | A new class implementing `Gateway`, then `create_app`. Nothing else knows |
 | Upgrade WAHA | The digest in `ops/waha/compose.yaml`, tested on the spare number first |
+| Deploy, or check a gate line on the server | `docs/runbook-deploy.md` |
+| Change how long backups are kept | `KEEP` in `ops/backup/backup_tracker.sh`, and the notice's "14 hari" with it |
 | Get someone's records without WhatsApp | `tracker export <id> <file>`, with the owner's login |
 | Change a rate limit or the reply limit | `channel/ratelimit.py` |
 | Change what's kept, and for how long | `ledger/retention.py`, and PR6 in Phase 2 |

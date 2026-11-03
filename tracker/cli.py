@@ -10,6 +10,7 @@ import typer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from tracker.ledger.deletions import DeletionListError, export_deleted_ids, reapply_deletions
 from tracker.ledger.engine import create_engine
 from tracker.ledger.export import export_person_csv
 from tracker.ledger.people import create_person, delete_person, set_suspended
@@ -83,6 +84,24 @@ def delete(
         typer.echo(f"No person {person_id}.", err=True)
         raise typer.Exit(code=1)
     typer.echo("Deleted.")
+
+
+@app.command("deletions-export")
+def deletions_export(path: Path) -> None:
+    """Copy deleted ids to a file outside the backups. Run it often from cron (PR7)."""
+    total = _run_as_owner(lambda engine: export_deleted_ids(engine, path))
+    typer.echo(f"{total} deleted ids in {path}.")
+
+
+@app.command("deletions-reapply")
+def deletions_reapply(path: Path) -> None:
+    """After any restore: delete again everyone the restore brought back."""
+    try:
+        reapplied = _run_as_owner(lambda engine: reapply_deletions(engine, path))
+    except DeletionListError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(f"Deleted {reapplied} people again.")
 
 
 @app.command()

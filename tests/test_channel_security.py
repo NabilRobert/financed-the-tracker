@@ -47,7 +47,7 @@ SENTINEL = "zzsentinelzz"
 SENTINEL_PHONE = "628120000098"
 SENTINEL_AMOUNT = "98.765"
 # Change this only together with CONSENT_NOTICE_VERSION: people agreed to the old text.
-PINNED_NOTICE_SHA256 = "db91a6489997f0f955dc7c7aeb3d4a975515f57a9860cfe3031e1a87fac7aae1"
+PINNED_NOTICE_SHA256 = "cb2ca1e016532b2f0f3cddd7f8e020b5547cf0ea19c8f8ef7916567704734621"
 
 
 async def row_counts(owner_engine: AsyncEngine, person_id: int) -> dict[str, int]:
@@ -469,6 +469,7 @@ def test_the_notice_cannot_change_without_a_new_version() -> None:
         "bukan layanan keuangan",
         "ekspor",
         "hapus data saya",
+        "14 hari",
     ],
 )
 def test_the_notice_states_what_a_person_must_know(fact: str) -> None:
@@ -477,7 +478,7 @@ def test_the_notice_states_what_a_person_must_know(fact: str) -> None:
 
 # T35 to T38: WAHA itself.
 def test_waha_runs_on_a_pinned_image_with_nothing_public() -> None:
-    compose = (REPO_ROOT / "ops" / "waha" / "compose.yaml").read_text(encoding="utf-8")
+    compose = (REPO_ROOT / "ops" / "compose.yaml").read_text(encoding="utf-8")
     assert "image: devlikeapro/waha:gows-2026.10.1@sha256:" in compose
     assert '- "127.0.0.1:3000:3000"' in compose
     assert 'WAHA_DASHBOARD_ENABLED: "False"' in compose

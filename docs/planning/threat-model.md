@@ -34,7 +34,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 
 | Party | What they can reach | The limit we can set |
 |---|---|---|
-| **A stranger on the internet** | The webhook URL | Nothing without a valid signature |
+| **A stranger on the internet** | Nothing: no port is published, because WAHA connects out and calls the app privately | A probe from outside finds nothing |
 | **Another invited person** | Their own ledger | Never anyone else's |
 | **Someone holding a person's phone** | That person's chat | Only that person's data; Arthur can suspend it |
 | **WhatsApp (Meta)** | Who messages whom, and when. It can ban the number at any time. WhatsApp describes chats as end-to-end encrypted, which we haven't verified | **No technical limit.** Reply only, low volume, and a ledger that outlives the number |
@@ -57,7 +57,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T2 | A signature is guessed by timing | A constant-time comparison | `_is_signed` uses `compare_digest` on bytes, because on non-ASCII text it raises | 3 | Done |
 | T3 | A captured webhook is replayed, or WAHA repeats one | Unique message id in the database (L5). WAHA's timestamp header isn't signed, so age can't be trusted | `test_a_repeat_delivery_adds_nothing`, a simultaneous version, and one after undo. A restart test in slice 5 | 2 | Done |
 | T4 | A stranger uses the bot | Allow-list. Unknown senders get no reply and leave only a count (I3) | `test_a_stranger_gets_no_reply_and_leaves_only_a_count`, and the same for a sender with no resolvable id | 3 | Done |
-| T5 | A flood costs money or starves the server | Rate limits (R6), a reply limit (R7) and a body-size limit in the app; Caddy's limit in slice 5 | `test_a_flood_stops_at_the_limit_and_costs_one_notice`, `test_past_the_reply_limit_entries_are_still_logged` | 3, 5 | Part done |
+| T5 | A flood costs money or starves the server | Rate limits (R6), a reply limit (R7) and a body-size limit in the app. Nothing is published to the internet, so there's no public flood to absorb | `test_a_flood_stops_at_the_limit_and_costs_one_notice`, `test_past_the_reply_limit_entries_are_still_logged` | 3, 4 | Done |
 | T6 | A secret reaches a URL log | WAHA's key goes in a header, never a URL. Access logs stay off | `test_the_server_keeps_no_access_log`, `test_the_api_key_travels_in_a_header_only` | 3 | Done |
 
 | T34 | A failed write looks like success, so the message is lost | A failure answers 500, so WAHA retries | `test_a_failed_handler_answers_500_so_the_retry_works` | 3 | Done |
@@ -103,7 +103,7 @@ people's financial records on this channel? It stays open, and still gates real 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
 | T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says` | 2 | Done |
-| T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: a non-root, capped container with no owner login in its environment; little data kept, and the number is dropped once a LID is known. The rest is accepted | `test_the_first_message_links_the_bsuid_and_drops_the_number`. Checks in slice 5: the container's user and environment | 3, 5 | Part done |
+| T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: user 10001, a read-only root, no capabilities and a 256 MB cap, with no owner login in its environment; little data kept, and the number dropped once a LID is known. The rest is accepted | `test_the_app_never_gets_the_owners_login`, `test_the_app_container_is_locked_down`, and the image run as user 10001 with a read-only root. `docker inspect` on the server | 3, 5 | Part done |
 | T22 | Postgres is reachable from outside, or a login is stolen | Not published to the internet. One login per job, with the least grants (ADR-009) | Least grants are tested. An outside probe in slice 5 | 2, 5 | Part done |
 | T23 | The webhook secret or WAHA's API key is stolen | Least reach: WAHA is never public. `.env` readable only by the app, and written rotation steps | Rotation rehearsed once before the gate | 5 | Planned |
 | T24 | The server's host is compromised | The server's hardening is a prerequisite (P4), owned by the server work, not this repo | Part of the gate | 5 | Planned |
@@ -112,9 +112,9 @@ people's financial records on this channel? It stays open, and still gates real 
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T35 | WAHA's session files are stolen, handing over the account | Treated as the account itself: one volume, owner-only, never in the repo, and **left out of backups**, because re-linking is cheap and a stolen backup must not carry the account. Assumed plaintext | `test_waha_runs_on_a_pinned_image_with_nothing_public`, the ignore rules. Permissions and backup contents checked in slice 5 | 3, 5 | Part done |
-| T36 | WAHA's API or dashboard is reachable from outside. WAHA reported bots hijacking exposed sessions in April 2025 | Bound to loopback, with the dashboard and Swagger off. The app refuses a public `WAHA_URL`. Caddy serves only the tracker's webhook, if anything | `test_waha_runs_on_a_pinned_image_with_nothing_public`, `test_a_public_waha_url_stops_startup`. An outside probe in slice 5 | 3, 5 | Part done |
-| T37 | WAHA runs with no API key or a weak one | A hashed `WAHA_API_KEY` in its environment, and a required key in ours | `test_the_app_refuses_to_start_without_each_setting`. Checked against the running image in the live check | 3, 5 | Part done |
+| T35 | WAHA's session files are stolen, handing over the account | Treated as the account itself: one owner-only volume owned by user 10001, never in the repo or the image, and **left out of backups**. WAHA runs as user 10001 with a read-only root and no capabilities. Assumed plaintext | `test_waha_runs_locked_down_and_not_as_root`, `test_whatsapps_session_files_are_not_backed_up`. Checked locally that WAHA works this way. Permissions checked on the server | 3, 5 | Part done |
+| T36 | WAHA's API or dashboard is reachable from outside. WAHA reported bots hijacking exposed sessions in April 2025 | No port is published to the internet. WAHA's port is on loopback for linking over an SSH tunnel, with the dashboard and Swagger off. The app refuses a public `WAHA_URL` | `test_only_loopback_ports_are_published`, `test_a_public_waha_url_stops_startup`. Checked locally: no key or a wrong key gets 401, and both panels 404. An outside probe in slice 5 | 3, 5 | Part done |
+| T37 | WAHA runs with no API key or a weak one | A hashed `WAHA_API_KEY`, sent only in a header, because WAHA also accepts it in a URL. Both panel passwords are set, because WAHA otherwise prints generated ones to its log | `test_waha_never_generates_a_password_to_print`. Checked locally: with them set, WAHA's log holds no password or key | 3, 5 | Part done |
 | T38 | A new WAHA image changes behaviour or carries something hostile | Pinned by digest. An upgrade is a reviewed change, tested on the spare number first | `test_waha_runs_on_a_pinned_image_with_nothing_public` | 3 | Done |
 | T39 | A ban takes Arthur's own WhatsApp with it | A dedicated SIM, never his personal number. Written into the gate | The gate | 5 | Planned |
 | T40 | The number is banned, or WhatsApp stops the client, and records seem lost | The ledger lives in Postgres and never needs WhatsApp. `tracker export` works with WAHA stopped. A restore test proves it | `test_the_export_needs_no_channel`, then the gate | 3, 5 | Part done |
@@ -126,9 +126,9 @@ people's financial records on this channel? It stays open, and still gates real 
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T25 | A backup is stolen | Encrypted, with the key off the server (PR4) | Test: the backup file holds no readable sentinel | 5 | Planned |
+| T25 | A backup is stolen | Encrypted with `age` as it's made: `pg_dump` streams straight into it, so nothing readable touches the disk. The recipient is configuration, so a leaked key is rotated by changing one value (PR4) | `test_nothing_readable_touches_the_disk_during_a_backup`, `test_the_backup_key_is_configuration_not_code`. A backup searched for a sentinel on the server | 5 | Part done |
 | T26 | A backup can't be restored when it's needed | A restore into an empty database | A timed restore, with row counts compared | 5 | Planned |
-| T27 | A deleted person comes back from a backup | Backups expire on a stated schedule, and a kept list of deleted ids is re-applied after any restore (PR7) | Test: restore, re-apply, zero rows for that person | 5 | Planned |
+| T27 | A deleted person comes back from a backup | Backups are kept 14 days, as the notice says. Deleted ids are copied by cron to a file no backup touches, and re-applied after any restore (PR7) | `test_a_deletion_is_reapplied_after_a_restore`, `test_the_backup_keeps_the_period_the_notice_states`. The restore drill on the server | 5 | Part done |
 
 ### The model, if ever turned on
 

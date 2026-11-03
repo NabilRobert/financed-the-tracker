@@ -414,6 +414,10 @@ those, but a SIM used only for this keeps the bot's number separate.
 
 ## ADR-018: Hosting and capacity
 
+> **Updated in slice 5:** two containers, the app and WAHA, and no Caddy or subdomain. WAHA
+> connects out to WhatsApp and calls the app over a private network, so nothing is
+> published to the internet. See `ops/compose.yaml` and `docs/runbook-deploy.md`.
+
 **Decision:**
 - One container: FastAPI, one worker, `pydantic-ai-slim` only when the
   fallback is on.
@@ -562,6 +566,14 @@ and the portfolio has to say so plainly.
 | **Session theft** | WAHA's session files let their holder act as the account. WAHA reported bots hijacking exposed sessions in April 2025 | Never public, an API key, owner-only files, kept out of backups |
 | **Few maintainers** | Mostly two people | The adapter is small, and the ledger doesn't depend on it |
 | **Portfolio** | A reviewer may read this as ignoring the terms. Project 9 no longer shows the official route | The honest record of why, and of the risk taken, is the portfolio entry |
+
+**Checked locally against the pinned image (2026-11-03, unlinked, no number):** no key or
+a wrong key gets 401, and the key also works in a URL, so we only ever send a header. The
+dashboard and Swagger are off and answer 404. Our session config, with its HMAC key, is
+accepted and read back as written. The image runs as root by default, and works as user
+10001 with a read-only root and no capabilities. With the panels off, it still printed
+generated passwords to its log until we set them ourselves. The image is amd64-only, so
+memory is measured on the server.
 
 **If the number is banned:** nobody's records are lost. Replies stop, and new
 messages go unlogged until a new number is linked. Entries, budgets and consent stay

@@ -1,0 +1,9 @@
+# Only what the image needs. Secrets, sessions and tests stay out of it.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!tracker/
+!migrations/
+!alembic.ini
+**/__pycache__

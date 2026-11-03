@@ -12,6 +12,7 @@ HANDOVER*.md
 # WAHA's session files are the WhatsApp account itself.
 .sessions/
 ops/waha/sessions/
+ops/waha-sessions/
 
 # Database dumps, logs and real messages
 *.dump
