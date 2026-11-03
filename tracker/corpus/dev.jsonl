@@ -171,8 +171,8 @@
 {"text": "kopi ٢٥", "outcome": "ask"}
 {"text": "kopi ２５ｒｂ", "outcome": "ask"}
 {"text": "kopi २५", "outcome": "ask"}
-{"text": "seribu lima ratus", "outcome": "ask"}
-{"text": "sejuta lima ratus ribu", "outcome": "ask"}
+{"text": "seribu lima ratus", "outcome": "entry", "amount": 1500, "direction": "spending", "category": "Lainnya", "note": "hundreds after ribu are sure"}
+{"text": "sejuta lima ratus ribu", "outcome": "entry", "amount": 1500000, "direction": "spending", "category": "Lainnya"}
 {"text": "2 juta setengah", "outcome": "ask"}
 {"text": "mau beli hp 3jt", "outcome": "ask"}
 {"text": "besok bayar kos 1jt", "outcome": "ask"}
@@ -203,3 +203,18 @@
 {"text": "007", "outcome": "unparsed"}
 {"text": "makan25rb", "outcome": "unparsed"}
 {"text": "25rbx", "outcome": "unparsed"}
+{"text": "nasi padang tiga puluh lima ribu", "outcome": "entry", "amount": 35000, "direction": "spending", "category": "Makan"}
+{"text": "setengah juta buat servis motor", "outcome": "entry", "amount": 500000, "direction": "spending", "category": "Transport"}
+{"text": "bayar listrik satu juta tiga ratus ribu", "outcome": "entry", "amount": 1300000, "direction": "spending", "category": "Tagihan"}
+{"text": "dapat angpao dua ratus ribu", "outcome": "entry", "amount": 200000, "direction": "income", "category": "Pemasukan Lain"}
+{"text": "gaji tujuh juta", "outcome": "entry", "amount": 7000000, "direction": "income", "category": "Gaji"}
+{"text": "seribu dua ratus lima puluh parkir", "outcome": "entry", "amount": 1250, "direction": "spending", "category": "Transport"}
+{"text": "satu setengah juta sewa kamar", "outcome": "entry", "amount": 1500000, "direction": "spending", "category": "Tagihan"}
+{"text": "beli dua es teh sepuluh ribu", "outcome": "entry", "amount": 10000, "direction": "spending", "category": "Makan", "note": "dua counts the drinks"}
+{"text": "nonton bioskop empat puluh lima rb", "outcome": "entry", "amount": 45000, "direction": "spending", "category": "Hiburan"}
+{"text": "delapan belas ribu ojol", "outcome": "entry", "amount": 18000, "direction": "spending", "category": "Transport"}
+{"text": "dua juta lima ratus beli hp", "outcome": "ask", "note": "2,5 juta with ribu dropped, or 2.000.500"}
+{"text": "makan lima puluh ribu dua", "outcome": "ask", "note": "the dua may count plates"}
+{"text": "lima lima ribu", "outcome": "ask"}
+{"text": "sejuta setengah", "outcome": "ask", "note": "setengah after the scale word is unclear"}
+{"text": "mau transfer dua juta", "outcome": "ask"}

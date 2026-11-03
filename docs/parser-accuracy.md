@@ -6,16 +6,23 @@ end of every run, so they can't drift from this page without showing up.
 ## Result
 
 The held-out set was scored once, on commit `16a324b`, with the code frozen
-first. Two changes came later, and neither was found on the corpus:
+first. **That score is still the honest one.** Three changes came later:
 
 - `cepek` now asks instead of reading as Rp100, because speakers disagree on it.
   No held-out message contains `cepek`.
 - `clean_text` now drops control characters, because a NUL byte crashed the
   database write.
+- **Spelled-out numbers are now read** (2026-11-03), such as `lima puluh ribu`
+  and `setengah juta`. This one *was* found on the held-out set: all three of
+  its misses were spelled out, and they were read before the fix. So the
+  held-out line CI prints has moved to coverage 100% and straight writes 97.0%,
+  and those numbers are not a measurement. Wrong amounts and false writes are
+  still 0 there.
 
-The figures stand. CI still prints them on every run, and they haven't moved.
+The table keeps the figures from `16a324b`. A new honest held-out number needs a
+fresh held-out set, written blind to the code and scored once.
 
-| Measure | Held-out (100) | Dev (205) | Target |
+| Measure | Held-out (100) | Dev (205 then) | Target |
 |---|---|---|---|
 | Wrong amounts | **0** | 0 | 0 |
 | False writes | **0** | 0 | 0 |
@@ -77,10 +84,11 @@ numbers.
 | **Needless question** | Labelled `entry`, but the rules asked: one extra tap, nothing wrong |
 | **Missed** | About money, but the rules returned nothing, so it gets "belum paham" |
 
-## The misses, left as they are
+## The misses at `16a324b`
 
-Fixing these would be tuning on the held-out set. Real misses go into the dev
-set during dogfooding, in fresh wording.
+Real misses go into the dev set during dogfooding, in fresh wording. The three
+spelled-out misses were fixed on 2026-11-03, with fresh wording in the dev set,
+which burned the held-out set for coverage (see the result above).
 
 | Message | What happened |
 |---|---|
@@ -106,5 +114,10 @@ set during dogfooding, in fresh wording.
   `len(remainder) >= 3` can't differ there, because 3 has already returned.
 - **By hand:** mutmut doesn't touch module-level patterns, so 36 changes to the
   regexes and constants were made one at a time. A test caught all 36.
+- **Spelled numbers (2026-11-03):** 192 mutants of `spelled.py`; 180 caught.
+  Three survivors are equivalent (a made-up word for "no word", `> 1` where
+  hundreds are 0 or at least 100, `None` for `0`). The other nine sit in the
+  pattern built at import, which mutmut can't reach, so six pattern changes
+  were made by hand: four caught, two equivalent and then removed as dead code.
 - **Fuzz:** 5,000 seeded random strings, with a fixed seed. No crash, and no
   written amount outside the limits.

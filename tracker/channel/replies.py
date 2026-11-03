@@ -74,7 +74,7 @@ _REASON_TEXT: Final[dict[AmbiguityReason, str]] = {
     AmbiguityReason.FOREIGN_DIGITS: "Tulis angkanya dengan 0 sampai 9.",
     AmbiguityReason.SEVERAL_AMOUNTS: "Ada beberapa jumlah. Kirim satu per satu ya.",
     AmbiguityReason.PER_ITEM_PRICE: "Tulis totalnya saja ya, misalnya: kopi 50rb.",
-    AmbiguityReason.SPELLED_NUMBER: "Tulis jumlahnya dengan angka ya, misalnya: 1,5jt.",
+    AmbiguityReason.SPELLED_NUMBER: "Jumlahnya kurang jelas. Bisa ditulis dengan angka, misalnya: 1,5jt.",
     AmbiguityReason.FOREIGN_CURRENCY: "Bot ini hanya mencatat rupiah.",
     AmbiguityReason.NOT_A_TRANSACTION: "Mau dicatat sebagai transaksi?",
 }

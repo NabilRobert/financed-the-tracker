@@ -32,7 +32,8 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 **Parsing (rules, $0)**
 - **P1. Amount forms:** `25rb`, `25 ribu`, `25k`, `25.000`, `25,000`,
   `Rp25.000`, `1,5jt`, `1.5jt`, `2jt500`, `sejuta`, and slang (`goceng`,
-  `ceban`, `gopek`), each pinned in the corpus. `cepek` always asks: some
+  `ceban`, `gopek`), each pinned in the corpus. Number words with a scale word
+  (`lima puluh ribu`, `setengah juta`) were added on 2026-11-03. `cepek` always asks: some
   speakers mean Rp100, others Rp100,000.
 - **P2.** Amounts are parsed with `Decimal` from the text, never `float`.
   A result that isn't a whole number of rupiah is refused.

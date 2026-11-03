@@ -89,7 +89,7 @@ def test_foreign_digits_are_refused_even_with_no_ascii_amount(text: str) -> None
     assert asked(text).ambiguity.reason is AmbiguityReason.FOREIGN_DIGITS
 
 
-@pytest.mark.parametrize("text", ["seribu lima ratus", "sejuta lima ratus ribu", "2 juta setengah", "lima 25rb"])
+@pytest.mark.parametrize("text", ["2 juta setengah", "sejuta setengah", "lima 25rb", "dua juta lima ratus"])
 def test_an_amount_inside_a_spelled_out_number_asks(text: str) -> None:
     assert asked(text).ambiguity.reason is AmbiguityReason.SPELLED_NUMBER
 

@@ -17,6 +17,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Final
 
+from tracker.parsing.spelled import NUMBER_VOCABULARY, SPELLED_NUMBER_PATTERN, spelled_number_readings
+
 MIN_UNITLESS_RUPIAH: Final = 1_000  # P3: "kopi 25" could be Rp25 or Rp25.000.
 MAX_ENTRY_RUPIAH: Final = 1_000_000_000  # L2.
 MAX_TEXT_CHARS: Final = 4_096  # WhatsApp's limit on a text message; longer text isn't a real message.
@@ -40,9 +42,8 @@ UNIT_MULTIPLIERS: Final[dict[str, int]] = {
 MILLION_OR_BILLION_UNIT: Final = "m"  # Miliar to an Indonesian reader, million in English.
 SIGN_CHARACTERS: Final = "-\u2212\u2013+"  # Hyphen, minus and en dash, which phones swap, and plus.
 
+# Number words ("lima puluh ribu", "sejuta") are read in spelled.py.
 SPELLED_AMOUNTS: Final[dict[str, int]] = {
-    "seribu": 1_000,
-    "sejuta": 1_000_000,
     # Jakarta slang from Hokkien numbers. P1 lists goceng, ceban and gopek, and cepek below.
     "gopek": 500,
     "seceng": 1_000,
@@ -55,7 +56,8 @@ SPELLED_AMOUNTS: Final[dict[str, int]] = {
 
 # Words whose meaning depends on who's speaking: some mean Rp100,000 by cepek.
 AMBIGUOUS_SPELLED_AMOUNTS: Final[dict[str, tuple[int, ...]]] = {"cepek": (100, 100_000)}
-SPELLED_WORDS: Final = frozenset(SPELLED_AMOUNTS) | frozenset(AMBIGUOUS_SPELLED_AMOUNTS)
+SLANG_WORDS: Final = frozenset(SPELLED_AMOUNTS) | frozenset(AMBIGUOUS_SPELLED_AMOUNTS)
+SPELLED_WORDS: Final = SLANG_WORDS | NUMBER_VOCABULARY
 
 
 class AmbiguityReason(StrEnum):
@@ -70,10 +72,10 @@ class AmbiguityReason(StrEnum):
     SIGNED_AMOUNT = "signed_amount"
     OVER_LIMIT = "over_limit"
     FOREIGN_DIGITS = "foreign_digits"
+    SPELLED_NUMBER = "spelled_number"  # Also from a whole message: "2 juta setengah".
     # From reading a whole message.
     SEVERAL_AMOUNTS = "several_amounts"
     PER_ITEM_PRICE = "per_item_price"
-    SPELLED_NUMBER = "spelled_number"
     FOREIGN_CURRENCY = "foreign_currency"
     NOT_A_TRANSACTION = "not_a_transaction"
 
@@ -101,7 +103,7 @@ class FoundAmount:
 
 
 _UNIT = "|".join([*sorted(UNIT_MULTIPLIERS, key=len, reverse=True), MILLION_OR_BILLION_UNIT])
-_SPELLED = "|".join(sorted(SPELLED_WORDS))
+_SLANG = "|".join(sorted(SLANG_WORDS))
 # All of a number or none of it: no backing off "1.500" to "1", and no unit left
 # behind a stray separator as in "1.000.rb".
 _NUMBER = rf"(?!0[0-9])[0-9]+(?:[.,][0-9]+)*(?![.,]?[0-9])(?![.,][ ]?(?:{_UNIT})(?![a-z]))"
@@ -115,7 +117,9 @@ _AMOUNT_PATTERN = re.compile(
     (?<![ ][.,])(?<!^[.,])              # ".5rb" has lost a digit, so it isn't 5rb
     (?P<outer_sign>[{SIGN_CHARACTERS}]+)?    # "kopi-25rb" never gets here: the first check stops it
     (?:
-        (?P<spelled>{_SPELLED})
+        (?P<words>{SPELLED_NUMBER_PATTERN})(?:[ ](?:rupiah|perak))?
+      |
+        (?P<spelled>{_SLANG})
       |
         (?:
             (?P<currency>(?:rp|idr)\.?[ ]?)
@@ -270,9 +274,18 @@ def _read_digits(match: re.Match[str], is_bare: bool) -> int | Ambiguous:
     return _checked_rupiah(base + lower_part, is_bare)
 
 
+def _read_words(words: str) -> int | Ambiguous:
+    readings = spelled_number_readings(words)
+    if len(readings) == 1:
+        return _checked_rupiah(readings[0], is_bare=False)
+    return _ambiguous(AmbiguityReason.SPELLED_NUMBER, *readings)
+
+
 def _read_match(match: re.Match[str], is_bare: bool) -> int | Ambiguous:
     if match["outer_sign"] or match["inner_sign"]:
         return Ambiguous(AmbiguityReason.SIGNED_AMOUNT)  # L2: the direction is never a sign.
+    if match["words"] is not None:
+        return _read_words(match["words"])
     spelled = match["spelled"]
     if spelled in AMBIGUOUS_SPELLED_AMOUNTS:
         return Ambiguous(AmbiguityReason.UNCLEAR_SLANG, AMBIGUOUS_SPELLED_AMOUNTS[spelled])
@@ -287,7 +300,7 @@ def find_amounts(cleaned: str) -> list[FoundAmount]:
     """Finds every amount in a text that clean_text has already been through."""
     amounts: list[FoundAmount] = []
     for match in _AMOUNT_PATTERN.finditer(cleaned):
-        has_mark = match["spelled"] or match["unit"] or match["currency"] or match["suffix"]
+        has_mark = match["words"] or match["spelled"] or match["unit"] or match["currency"] or match["suffix"]
         is_bare = not has_mark
         amounts.append(FoundAmount(_read_match(match, is_bare), match.start(), match.end(), is_bare))
     return amounts
