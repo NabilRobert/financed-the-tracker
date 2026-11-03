@@ -18,6 +18,10 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from corpus_scoring import DEV_CORPUS, HOLDOUT_CORPUS, format_score, load_corpus, score_corpus
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -111,6 +115,21 @@ async def owner_engine(database_name: str) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(database_url("tracker_owner", database_name))
     yield engine
     await engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def span_exporter() -> InMemorySpanExporter:
+    """Every span the app makes, kept in memory.
+
+    OpenTelemetry allows one global provider per process, and mutmut runs pytest several
+    times in one process, so a later run attaches to the provider that's already there.
+    """
+    exporter = InMemorySpanExporter()
+    existing_provider = trace.get_tracer_provider()
+    provider = existing_provider if isinstance(existing_provider, TracerProvider) else TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    return exporter
 
 
 @pytest.fixture

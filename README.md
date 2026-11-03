@@ -8,8 +8,8 @@ terms don't allow that, and the number can be banned without warning. Arthur cho
 knowingly: [ADR-022](docs/planning/phase-5-architecture-decisions.md#adr-022-waha-replaces-metas-cloud-api)
 records the decision and its risks. The records live in Postgres and survive a ban.
 
-**Status: slice 3 of 8.** The parser, the ledger and the WhatsApp channel exist, and
-the channel is proved with signed fixtures only. No number has been linked yet, there's
+**Status: slice 4 of 8.** The parser, the ledger, the WhatsApp channel and its privacy
+controls exist, and the channel is proved with signed fixtures only. No number has been linked yet, there's
 no server, and no model is used.
 
 **Security comes first:** no real person's data enters the system before
@@ -55,8 +55,10 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tracker/channel/conversation.py` | What the bot does with a message |
 | `tracker/channel/commands.py` | `rekap`, `budget`, `kategori`, `bantuan` |
 | `tracker/channel/replies.py` | Everything the bot says, including the consent notice |
+| `tracker/channel/leaving.py` | `ekspor` and `hapus data saya` |
+| `tracker/channel/tracing.py` | Spans, with no content |
 | `tracker/channel/settings.py` | Settings that refuse to start unsafely |
-| `tracker/cli.py` | Arthur's commands: add, suspend, resume and export |
+| `tracker/cli.py` | Arthur's commands: add, suspend, resume, export, delete and purge |
 | `tracker/serve.py` | Runs the server |
 | `ops/waha/` | WAHA's pinned, loopback-only setup |
 | `tracker/ledger/scope.py` | `person_transaction`: the one way in, limited to one person |
@@ -67,8 +69,10 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tracker/ledger/pending.py` | Entries waiting for a person's answer |
 | `tracker/ledger/people.py` | The allow-list, finding a webhook's sender, and consent |
 | `tracker/ledger/export.py` | A person's records as CSV, with no channel needed |
+| `tracker/ledger/retention.py` | The purge job |
 | `migrations/` | The schema, row-level security and grants |
 | `ops/db/roles.sql` | The database logins |
+| `tracker/parsing/sensitive.py` | Spots card, account and ID numbers |
 | `tests/corpus/` | The labelled messages and the rules for labelling them |
 | `tests/corpus_scoring.py` | Scores the rules against a corpus |
 | `tests/test_*.py` | The specification, one behaviour per test |

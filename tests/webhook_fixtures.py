@@ -90,6 +90,8 @@ class FakeWaha:
 
     pairs: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])  # (lid, phone digits)
     texts: list[str] = field(default_factory=list[str])
+    files: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    failures_left: int = 0
     sent_to: list[str] = field(default_factory=list[str])
     requests: list[httpx.Request] = field(default_factory=list[httpx.Request])
     is_down: bool = False
@@ -114,6 +116,11 @@ class FakeWaha:
             return self._lookup(httpx.URL(path.replace("%40", "@")).path)
         if self.is_down:
             return httpx.Response(500, json={"error": "down"})
+        if self.failures_left > 0:
+            self.failures_left -= 1
+            return httpx.Response(503)
+        if path.endswith("/sendFile"):
+            self.files.append(json.loads(request.content))
         if path.endswith("/sendText"):
             body = json.loads(request.content)
             self.texts.append(body["text"])

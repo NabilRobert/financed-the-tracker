@@ -285,7 +285,9 @@ async def test_every_link_between_peoples_tables_carries_person_id(owner_engine:
     assert list(rows) == []
 
 
-@pytest.mark.parametrize("function", ["tracker_resolve_sender", "tracker_count_unknown_sender"])
+@pytest.mark.parametrize(
+    "function", ["tracker_resolve_sender", "tracker_count_unknown_sender", "tracker_delete_person_in_scope"]
+)
 async def test_each_owner_function_is_for_the_app_alone_and_cannot_be_redirected(
     owner_engine: AsyncEngine, function: str
 ) -> None:

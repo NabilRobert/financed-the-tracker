@@ -83,6 +83,4 @@ async def run_command(scope: PersonScope, text: str, today: date, human_contact:
         return await _category(scope, words)
     if command == "bantuan":
         return replies.help_text(human_contact)
-    if command in ("hapus", "ekspor"):
-        return replies.not_built_yet(human_contact)
     return None

@@ -12,7 +12,7 @@ from tracker.ledger.summaries import Summary
 from tracker.parsing.amount import AmbiguityReason
 from tracker.parsing.message import Direction
 
-CONSENT_NOTICE_VERSION: Final = "20261103"
+CONSENT_NOTICE_VERSION: Final = "20261104"
 CONSENT_NOTICE: Final = """Halo! Ini bot pencatat keuangan pribadi. Sebelum mulai, mohon baca dulu.
 
 Bot ini memakai jalur tidak resmi. WhatsApp tidak mengizinkannya, jadi nomor bot bisa diblokir kapan saja tanpa pemberitahuan. Kalau itu terjadi, catatanmu tetap aman di server, dan Arthur bisa mengirimkannya kepadamu.
@@ -25,6 +25,8 @@ Siapa yang bisa melihat:
 - Bot ini tidak memakai model AI.
 
 Jangan kirim nomor kartu, rekening, atau KTP.
+
+Mau salinan catatanmu? Tulis: ekspor. Mau menghapus semuanya? Tulis: hapus data saya.
 
 Ini bukan layanan keuangan. Bot hanya mencatat apa yang kamu tulis.
 
@@ -41,6 +43,14 @@ CANCELLED: Final = "Oke, tidak dicatat."
 QUESTION_EXPIRED: Final = "Pertanyaan itu sudah kedaluwarsa. Kirim lagi ya."
 ANSWER_ONE_OR_TWO: Final = "Balas 1, 2, atau batal."
 ANSWER_YES_OR_CANCEL: Final = "Balas ya atau batal."
+SENSITIVE_NUMBER: Final = (
+    "Pesan itu sepertinya berisi nomor kartu, rekening, atau KTP, jadi tidak dicatat. Hapus pesan itu dari chat ini ya."
+)
+DELETE_CONFIRM: Final = "Ini akan menghapus semua catatanmu dan tidak bisa dikembalikan. Yakin? Balas: hapus semua"
+DELETE_HOW: Final = "Untuk menghapus semua catatanmu, tulis: hapus data saya"
+DELETED: Final = "Semua datamu sudah dihapus. Terima kasih sudah memakai bot ini."
+EXPORT_CAPTION: Final = "Ini semua catatanmu."
+EXPORT_FILENAME: Final = "catatan-keuangan.csv"
 RATE_LIMITED: Final = "Pesanmu terlalu banyak. Coba lagi nanti ya."
 BUDGET_HOW: Final = "Tulis seperti ini: budget makan 2jt"
 BUDGET_UNKNOWN_CATEGORY: Final = "Kategori itu tidak ada, atau bukan kategori pengeluaran."
@@ -87,14 +97,11 @@ def help_text(human_contact: str) -> str:
         "rekap minggu ini, rekap maret\n"
         "budget makan 2jt: atur budget\n"
         "budget: lihat semua budget\n"
-        "kategori transport: ganti kategori catatan terakhir\n\n"
-        f"Mau berhenti, menghapus data, atau butuh bantuan orang? Hubungi {human_contact}."
+        "kategori transport: ganti kategori catatan terakhir\n"
+        "ekspor: kirim semua catatanmu\n"
+        "hapus data saya: hapus semua catatanmu\n\n"
+        f"Butuh bantuan orang? Hubungi {human_contact}."
     )
-
-
-def not_built_yet(human_contact: str) -> str:
-    """For `hapus data saya` and `ekspor` until slice 4: a person is never left guessing."""
-    return f"Fitur ini belum tersedia. Untuk sekarang, hubungi {human_contact}."
 
 
 def _warning_text(warning: BudgetWarning) -> str:

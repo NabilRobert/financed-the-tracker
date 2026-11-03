@@ -8,6 +8,7 @@ Only direct chats reach the bot: `@c.us` and `@lid`. Its own messages, groups, b
 and channels are dropped here, so it can't loop or reply where others can read (T42).
 """
 
+import base64
 import hashlib
 import hmac
 from collections.abc import Mapping
@@ -17,8 +18,16 @@ from typing import Any, Final
 from urllib.parse import quote
 
 import httpx
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from tracker.channel.gateway import ChannelStopped, IncomingMessage, MalformedEventError, Sender, SignatureCheck
+from tracker.channel.gateway import (
+    Attachment,
+    ChannelStopped,
+    IncomingMessage,
+    MalformedEventError,
+    Sender,
+    SignatureCheck,
+)
 
 HMAC_HEADER: Final = "x-webhook-hmac"
 ALGORITHM_HEADER: Final = "x-webhook-hmac-algorithm"
@@ -30,6 +39,9 @@ MESSAGE_EVENT: Final = "message"
 STATUS_EVENT: Final = "session.status"
 STOPPED_STATUSES: Final = frozenset({"STOPPED", "FAILED"})
 HTTP_NOT_FOUND: Final = 404
+HTTP_SERVER_ERROR: Final = 500
+SEND_ATTEMPTS: Final = 3  # R3. The webhook waits on these, so they stay few.
+EXPORT_MIMETYPE: Final = "text/csv"
 
 
 @dataclass(frozen=True)
@@ -39,6 +51,7 @@ class WahaGateway:
     api_key: str
     session: str
     webhook_key: str
+    retry_wait_ms: int = 200
 
     def check_signature(self, body: bytes, headers: Mapping[str, str]) -> SignatureCheck:
         signature = headers.get(HMAC_HEADER)
@@ -76,6 +89,16 @@ class WahaGateway:
         await self._post("sendSeen", chat)
         await self._post("sendText", {**chat, "text": text, "linkPreview": False})
 
+    async def send_file(self, to: str, attachment: Attachment) -> None:
+        file = {
+            "mimetype": EXPORT_MIMETYPE,
+            "filename": attachment.filename,
+            "data": base64.b64encode(attachment.content).decode(),
+        }
+        await self._post(
+            "sendFile", {"session": self.session, "chatId": to, "file": file, "caption": attachment.caption}
+        )
+
     async def _read_pairing(self, path: str) -> dict[str, Any]:
         """A LID and phone pairing, empty if WAHA doesn't know one. An outage raises, so the
         message isn't lost: the webhook answers 500 and WAHA retries."""
@@ -89,10 +112,25 @@ class WahaGateway:
         return pairing
 
     async def _post(self, path: str, body: dict[str, Any]) -> None:
-        response = await self.client.post(
-            f"{self.base_url}/api/{path}", json=body, headers={API_KEY_HEADER: self.api_key}
+        """Retries only what can't have reached WhatsApp twice: no connection, or WAHA failing."""
+        retrying = AsyncRetrying(
+            stop=stop_after_attempt(SEND_ATTEMPTS),
+            wait=wait_exponential(multiplier=self.retry_wait_ms / 1000),
+            retry=retry_if_exception(_is_worth_retrying),
+            reraise=True,
         )
-        response.raise_for_status()
+        async for attempt in retrying:
+            with attempt:
+                response = await self.client.post(
+                    f"{self.base_url}/api/{path}", json=body, headers={API_KEY_HEADER: self.api_key}
+                )
+                response.raise_for_status()
+
+
+def _is_worth_retrying(error: BaseException) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code >= HTTP_SERVER_ERROR
+    return isinstance(error, httpx.ConnectError | httpx.ConnectTimeout)
 
 
 def _phone_digits(chat_id: object) -> str | None:

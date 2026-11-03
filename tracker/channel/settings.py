@@ -31,6 +31,8 @@ class Settings(BaseModel):
     waha_api_key: SecretStr
     webhook_key: SecretStr
     human_contact: str  # Who `bantuan` points to: automated replies need a path to a human. Never in the repo.
+    version: str = "unknown"  # The deployed commit, for the monitoring drift check.
+    otlp_endpoint: str | None = None  # Traces stay off without one.
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> Self:
@@ -50,6 +52,8 @@ class Settings(BaseModel):
             waha_api_key=SecretStr(environment["WAHA_API_KEY"]),
             webhook_key=SecretStr(environment["WAHA_WEBHOOK_HMAC_KEY"]),
             human_contact=environment["BANTUAN_CONTACT"],
+            version=environment.get("TRACKER_VERSION", "").strip() or "unknown",
+            otlp_endpoint=environment.get("TRACKER_OTLP_ENDPOINT", "").strip() or None,
         )
 
 

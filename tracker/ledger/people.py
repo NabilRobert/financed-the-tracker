@@ -5,12 +5,13 @@ see other people. Arthur's CLI calls them. Everything else runs as tracker_app.
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Final
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tracker.ledger.scope import PersonScope
+from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.parsing.keywords import (
     DEFAULT_SPENDING_CATEGORY,
     OTHER_INCOME_CATEGORY,
@@ -19,6 +20,7 @@ from tracker.parsing.keywords import (
 )
 from tracker.parsing.message import Direction
 
+DELETION_CONFIRM_WINDOW: Final = timedelta(minutes=10)
 # C1: the fixed starter list. Each person gets their own copy, so remembered
 # words and budgets never touch anyone else's.
 STARTER_CATEGORIES: Final[tuple[tuple[str, Direction], ...]] = (
@@ -104,6 +106,39 @@ async def record_consent(scope: PersonScope, notice_version: str) -> None:
         """),
         {"person_id": scope.person_id, "notice_version": notice_version},
     )
+
+
+async def request_deletion(scope: PersonScope) -> None:
+    await scope.connection.execute(
+        text("UPDATE person SET deletion_requested_at = now() WHERE id = :person_id"),
+        {"person_id": scope.person_id},
+    )
+
+
+async def has_open_deletion_request(scope: PersonScope) -> bool:
+    """True if `hapus data saya` came within the window, so a stale request can't be confirmed."""
+    is_open = await scope.connection.scalar(
+        text("""
+            SELECT deletion_requested_at > now() - CAST(:window AS interval) FROM person WHERE id = :person_id
+        """),
+        {"person_id": scope.person_id, "window": DELETION_CONFIRM_WINDOW},
+    )
+    return bool(is_open)
+
+
+async def delete_person_in_scope(scope: PersonScope) -> None:
+    """Deletes everything about the person in scope (I6). The function can reach no one else."""
+    await scope.connection.execute(text("SELECT tracker_delete_person_in_scope()"))
+
+
+async def delete_person(owner_engine: AsyncEngine, person_id: int) -> bool:
+    """The same deletion from Arthur's CLI, for when the channel is gone. False if there's no such person."""
+    async with person_transaction(owner_engine, person_id) as scope:
+        exists = await scope.connection.scalar(text("SELECT 1 FROM person WHERE id = :id"), {"id": person_id})
+        if exists is None:
+            return False
+        await delete_person_in_scope(scope)
+    return True
 
 
 @dataclass(frozen=True)

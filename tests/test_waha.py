@@ -18,7 +18,7 @@ PHONE_CHAT = f"{PHONE}@c.us"
 
 def gateway_for(waha: FakeWaha) -> WahaGateway:
     client = httpx.AsyncClient(transport=waha.transport())
-    return WahaGateway(client, WAHA_URL, API_KEY, SESSION, WEBHOOK_KEY)
+    return WahaGateway(client, WAHA_URL, API_KEY, SESSION, WEBHOOK_KEY, retry_wait_ms=0)
 
 
 def read(event: dict[str, Any]) -> IncomingMessage | ChannelStopped | None:

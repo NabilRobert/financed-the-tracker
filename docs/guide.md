@@ -54,6 +54,15 @@ anything above Rp10,000,000) becomes a row in `pending_entry`, and the person re
 newest question, and a new entry closes any open one. `batal` with no question open undoes
 only the newest entry, so repeating it can't reach an older one.
 
+**A message that looks like a card, account or ID number** stops at
+`tracker/parsing/sensitive.py: looks_sensitive`, before anything can store it.
+
+**Leaving** is in `tracker/channel/leaving.py`. `ekspor` sends a CSV of the person's own
+records. `hapus data saya` asks first, and `hapus semua` within ten minutes runs
+`tracker_delete_person_in_scope`, a database function that can only reach the person in
+scope. Only their id stays, in `deleted_person`, so a deletion can be re-applied after a
+restore.
+
 **Everything WhatsApp-specific is behind `tracker/channel/gateway.py`.** To replace WAHA,
 write one more class with those four methods. Nothing else changes.
 
@@ -241,6 +250,10 @@ costs one reply. A wrong amount costs trust in every total after it.
 | **Pending entry** | An entry waiting for a person's typed answer, for up to 24 hours | `ledger/pending.py` |
 | **Consent notice** | What a person reads and agrees to before anything is stored. Its text is pinned to a version | `replies.py` |
 | **Suspension** | Arthur stops every read and write for a person | `tracker suspend` |
+| **Span** | One timed step in a trace. Ours hold names and outcomes, never content | `channel/tracing.py` |
+| **Outcome** | What became of a message, with no text, so misses can be counted | `inbound_message.outcome` |
+| **Reply limit** | A cap on sends across everyone. It replaced Meta's cap: a burst risks a ban | `channel/ratelimit.py` |
+| **Purge** | The job that deletes what's past keeping | `ledger/retention.py` |
 | **Threat model** | The list of what could go wrong, and what stops each thing | `docs/planning/threat-model.md` |
 | **Real-data gate** | The checklist that must pass before any real person's data enters the system | `docs/planning/slice-plan.md` |
 | **Fail closed** | When a check can't run, refuse rather than let the request through | Slice 3's webhook |
@@ -269,7 +282,10 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Replace WAHA | A new class implementing `Gateway`, then `create_app`. Nothing else knows |
 | Upgrade WAHA | The digest in `ops/waha/compose.yaml`, tested on the spare number first |
 | Get someone's records without WhatsApp | `tracker export <id> <file>`, with the owner's login |
-| Change a rate limit | `channel/ratelimit.py` |
+| Change a rate limit or the reply limit | `channel/ratelimit.py` |
+| Change what's kept, and for how long | `ledger/retention.py`, and PR6 in Phase 2 |
+| Delete someone without WhatsApp | `tracker delete <id> --yes`, with the owner's login |
+| Check the deployed version | `GET /healthz` gives `status` and `version` |
 | Add a person | `tracker add 628...`, with the owner's login |
 | Stop a person | `tracker suspend <id>`, then `tracker resume <id>` |
 | Add a threat or a control | A row in `docs/planning/threat-model.md`, with its proof and owning slice |
@@ -288,10 +304,12 @@ costs one reply. A wrong amount costs trust in every total after it.
   it, and `batal` undoes it.
 - **`cepek` always asks.** Some speakers mean Rp100, others Rp100,000, so the
   bot offers both. It's one line in `AMBIGUOUS_SPELLED_AMOUNTS`.
-- **Deleting a person isn't here.** `hapus data saya` is slice 4, which needs a
-  way past "the app can delete nothing". Until then the bot points to Arthur.
-- **A failed reply isn't retried.** The entry is safe, but the person isn't told.
-  Retries come in slice 4.
+- **A reply that still fails after retries is dropped.** The entry is safe, but the
+  person isn't told. A send is only retried if it can't have arrived.
+- **Past the reply limit, a question goes unasked.** Entries still log, and the open
+  question simply expires.
+- **Unparsed text isn't kept at all.** PR5 allows 30 days for Arthur's own, but nothing
+  needs it yet, so nothing stores it.
 - **An edited message changes nothing.** WhatsApp lets people edit a message, and
   the bot keeps the first version.
 - **A repeat of a message before consent sends the notice again.** Nothing may be

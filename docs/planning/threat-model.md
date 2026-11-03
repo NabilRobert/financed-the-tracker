@@ -57,7 +57,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T2 | A signature is guessed by timing | A constant-time comparison | `_is_signed` uses `compare_digest` on bytes, because on non-ASCII text it raises | 3 | Done |
 | T3 | A captured webhook is replayed, or WAHA repeats one | Unique message id in the database (L5). WAHA's timestamp header isn't signed, so age can't be trusted | `test_a_repeat_delivery_adds_nothing`, a simultaneous version, and one after undo. A restart test in slice 5 | 2 | Done |
 | T4 | A stranger uses the bot | Allow-list. Unknown senders get no reply and leave only a count (I3) | `test_a_stranger_gets_no_reply_and_leaves_only_a_count`, and the same for a sender with no resolvable id | 3 | Done |
-| T5 | A flood costs money or starves the server | Rate limits (R6) and a body-size limit in the app; Caddy's limit in slice 5 | `test_a_flood_stops_at_the_limit_and_costs_one_notice` | 3, 5 | Part done |
+| T5 | A flood costs money or starves the server | Rate limits (R6), a reply limit (R7) and a body-size limit in the app; Caddy's limit in slice 5 | `test_a_flood_stops_at_the_limit_and_costs_one_notice`, `test_past_the_reply_limit_entries_are_still_logged` | 3, 5 | Part done |
 | T6 | A secret reaches a URL log | WAHA's key goes in a header, never a URL. Access logs stay off | `test_the_server_keeps_no_access_log`, `test_the_api_key_travels_in_a_header_only` | 3 | Done |
 
 | T34 | A failed write looks like success, so the message is lost | A failure answers 500, so WAHA retries | `test_a_failed_handler_answers_500_so_the_retry_works` | 3 | Done |
@@ -75,17 +75,17 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a typed confirmation. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`. The confirmation for `hapus` comes with `hapus` in slice 4 | 3, 4 | Part done |
+| T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a typed confirmation within ten minutes. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`, `test_a_stale_deletion_request_cannot_be_confirmed` | 3, 4 | Done |
 | T12 | A recycled number reaches an old ledger | Keyed on the LID when WAHA gives one, so a new owner of a number is a new id. **A person known only by `@c.us` keeps this risk,** because that id is the number | `test_a_recycled_number_with_a_new_id_reaches_nothing`. The live check shows how often a LID is available | 3 | Part done |
 
 ### Sensitive content
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T13 | A card or account number gets stored | Detected and refused before any write, including a pending entry (PR3) | Tests: 13 to 19 digits or a Luhn match stores nothing and goes to no model | 4 | Planned |
-| T14 | Message text, names, numbers or amounts reach logs, spans or alerts | No content by rule (PR2). The database engine runs with `hide_parameters`, so an error can't print an amount. Failure paths log an error type only | `test_no_path_logs_message_text_numbers_or_ids`, failures included. Spans and alerts come in slice 4 | 3, 4 | Part done |
-| T15 | Data is kept forever | The retention table (PR6) and a purge job | Tests: expired rows are gone after the job runs | 4 | Planned |
-| T16 | A person leaves and their data stays | `hapus data saya` removes every row (I6). The app login can't delete, so this is one narrow database function | Test: zero rows in every table, and no other person's rows touched | 4 | Planned |
+| T13 | A card or account number gets stored | Detected and refused before any write, including a pending entry (PR3) | `test_a_card_number_is_refused_before_anything_stores_it`, `test_a_card_number_cannot_reach_a_question_either` | 4 | Done |
+| T14 | Message text, names, numbers or amounts reach logs, spans or alerts | No content by rule (PR2). The database engine runs with `hide_parameters`. Failure paths log an error type only. FastAPI's own telemetry is off, because it records query strings and exception messages. A span's exception adds its type, never its text | `test_no_path_logs_message_text_numbers_or_ids`, `test_spans_cover_the_path_and_hold_no_content`, `test_no_library_adds_spans_of_its_own`. Alert rules are checked in slice 5 | 3, 4, 5 | Part done |
+| T15 | Data is kept forever | The retention table (PR6) and a purge job | `test_the_purge_removes_expired_questions_and_old_bare_message_ids`, `test_a_purged_entrys_message_id_is_never_removed` | 4 | Done |
+| T16 | A person leaves and their data stays | `hapus data saya` removes every row, through one function that can only reach the person in scope. The app login can't delete anything else. `tracker delete` does the same if the channel is gone | `test_hapus_data_saya_leaves_zero_rows_for_that_person_alone`, which finds the tables from the catalog | 4 | Done |
 | T17 | Data is stored before consent | Nothing is written before **setuju**, and only for a notice this person was sent, with the time and version recorded (I4, I7) | `test_a_person_who_has_not_agreed_gets_the_notice_and_nothing_is_stored`, `test_setuju_agrees_only_to_a_notice_the_person_was_sent` | 3 | Done |
 
 ### WhatsApp
@@ -93,7 +93,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
 | T18 | WhatsApp and Meta see who messages whom, and could end the service | **Can't be prevented.** The consent notice says so, and that this is an unofficial channel. No photos, and card refusal | `test_the_notice_cannot_change_without_a_new_version`, `test_the_notice_states_what_a_person_must_know` | 3 | Done |
-| T19 | `ekspor` sends a person's numbers through WhatsApp | Only their own data, and the notice says what passes through | Test in slice 4 | 4 | Planned |
+| T19 | `ekspor` sends a person's numbers through WhatsApp | Only their own data, and the notice says what passes through | `test_ekspor_sends_this_persons_records_and_no_one_elses` | 4 | Done |
 
 **WhatsApp's terms replace section 4.2:** is it acceptable to break them, to hold
 people's financial records on this channel? It stays open, and still gates real use.

@@ -365,6 +365,11 @@ parser path (`rules`, `model`, `failed`) is an attribute. Amounts never are.
 
 Those changes are made by that repo's session, at deploy time.
 
+**Found in slice 4:** FastAPI 0.162 traces itself once OpenTelemetry is installed,
+including URL query strings and exception messages as log events. Its telemetry is off,
+and a test fails if any library adds a span. Spans flush on shutdown, the bug Project 6
+found in the gateway on SIGTERM.
+
 **Rejected:** *Grafana for this:* Juku's instance is its own, and a chat
 summary needs no dashboard.
 
@@ -579,8 +584,9 @@ says the number can change.
   `tracker/channel/waha.py` its only WAHA-aware file, so the official API can return.
 - **Reply only:** the bot never starts a conversation, and only the webhook path sends.
 - **Costs:** Meta's prices, templates, the reply counter and the Rp25,000 cap are gone.
-  WhatsApp bills nothing here. R6's rate limits and the reply-only rule replace the cap,
-  and the cost that remains is the SIM.
+  WhatsApp bills nothing here. A reply limit (R7), R6's rate limits and the reply-only
+  rule replace the cap, because the risk is now a ban, not a bill. The cost that remains
+  is the SIM.
 - **The monthly summary:** B4's push was a message the bot started, which this
   decision bars. **Proposed, for Arthur to overrule:** it goes with a person's first
   reply of the month.

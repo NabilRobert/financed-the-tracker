@@ -34,7 +34,7 @@ mutation-checked once. Each slice updates `docs/guide.md`.
 | **1. Parser and corpus** | Repo scaffold, README, CI, complexity rules; `parse_amount`; `parse_message`; the corpus | See below | $0 |
 | **2. Ledger** | Schema and migrations; row-level security; write, void, categories, keywords; summaries and budgets in SQL; a test that no money is held in a float | Fixture summaries match to the rupiah; the isolation suite passes, mutation-checked | $0 |
 | **3. WhatsApp channel** | WAHA adapter behind one interface; signature check; message-id idempotency; allow-list; consent; typed answers; commands; `bantuan`; `tracker export` | Signed fixtures cover every path; replays add nothing; a forged request is refused; one live round trip on the spare number | $0 |
-| **4. Privacy and operations** | `hapus data saya`; `ekspor`; card-number refusal; send retries (R3); message outcomes; spans; `/healthz`; no-content tests for spans and alerts | Deletion leaves zero rows; no message text in logs or spans | $0 |
+| **4. Privacy and operations** | `hapus data saya`; `ekspor`; card-number refusal; the reply limit; the purge job; send retries (R3); message outcomes; spans; `/healthz` with `version`; no-content tests for spans | Deletion leaves zero rows; no message text in logs or spans | $0 |
 | **5. Deploy, gate, then dogfood** | Containers for the app and WAHA; Caddy; backups included; probes through the systems-monitoring session; [the gate](#the-real-data-gate); then Arthur alone for 2 weeks | Alerts fired on purpose and received; a restart loses nothing; the gate passes; misses are counted and turned into corpus cases | SIM only |
 | **6. Invite and monthly summary** | The summary with the first reply of the month; up to 4 invitations, sent by Arthur | The summary can't send twice; deletion checked with a real invited person's agreement | SIM only |
 | **7. Model fallback (Should)** | The typed proposal; validation; the Inspect task | Zero invented amounts in the eval; Arthur's OK for each paid run | About $0.10, not budgeted yet |
@@ -55,7 +55,8 @@ It has to confirm what the fixtures assume about WAHA, on the pinned image:
   including for a number that isn't a contact;
 - that `@lid` works as a chat id for sending;
 - that a new person's messages arrive at all;
-- that `session.status` reports a stopped session.
+- that `session.status` reports a stopped session;
+- that `POST /api/sendFile` takes our body, so `ekspor` arrives as a file.
 
 ## Security done-when for each slice
 ## Security done-when for each slice
@@ -89,7 +90,7 @@ time.
 | 2 | Row-level security holds on the deployed database | The isolation suite passes, and is mutation-checked | Passes in CI; deployed run in slice 5 |
 | 3 | No message text, names, numbers or amounts in logs, spans or alerts, including WAHA's own logs | No-content tests, and a sentinel message searched for on the server | Logs tested; the rest in slices 4 and 5 |
 | 4 | Backups are encrypted, and a restore works | A timed restore into an empty database | Planned, slice 5 |
-| 5 | Retention and `hapus data saya` work, and deletion survives a restore | Tests, and one real run with invented data | Planned, slices 4 and 5 |
+| 5 | Retention and `hapus data saya` work, and deletion survives a restore | Tests, and one real run with invented data | Tested; restore in slice 5 |
 | 6 | Rate limits work, and only replies are sent | Tests | Tested |
 | 7 | Secret scan and dependency audit pass | CI, green on the deployed commit | In CI since this branch |
 | 8 | Database logins have the least privilege | Grant tests, and a check of the app's environment | App login done; the rest in slices 5 and 6 |
@@ -148,8 +149,8 @@ server, so it can start the moment Arthur OKs the plan.
 | Dedicated SIM | A small top-up to keep it active; not priced yet |
 
 **The Rp25,000 cap and the reply counter are gone,** with Meta's prices (ADR-022). What
-they protected against now has a different shape: not a bill, but a ban. R6's rate limits
-and the reply-only rule replace them.
+they protected against now has a different shape: not a bill, but a ban. A reply limit
+(R7), R6's rate limits and the reply-only rule replace them.
 
 **Nothing in slices 1 to 5 costs money,** apart from the SIM. Slice 7's estimate: 100
 eval cases across 3 runs with gpt-5-mini is about $0.07, plus a margin. It isn't funded,

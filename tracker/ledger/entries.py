@@ -23,6 +23,18 @@ class EntrySource(StrEnum):
     MODEL = "model"
 
 
+class MessageOutcome(StrEnum):
+    """What became of a message. No text, so misses can be counted safely (ADR-015)."""
+
+    ENTRY = "entry"
+    QUESTION = "question"
+    ANSWER = "answer"
+    COMMAND = "command"
+    UNPARSED = "unparsed"
+    REFUSED = "refused"
+    NOT_TEXT = "not_text"
+
+
 class VoidOutcome(StrEnum):
     VOIDED = "voided"
     ALREADY_VOIDED = "already_voided"
@@ -57,6 +69,13 @@ async def claim_message(scope: PersonScope, meta_message_id: str) -> int | None:
             RETURNING id
         """),
         {"person_id": scope.person_id, "meta_message_id": meta_message_id},
+    )
+
+
+async def record_outcome(scope: PersonScope, inbound_message_id: int, outcome: MessageOutcome) -> None:
+    await scope.connection.execute(
+        text("UPDATE inbound_message SET outcome = :outcome WHERE id = :id AND person_id = :person_id"),
+        {"outcome": outcome, "id": inbound_message_id, "person_id": scope.person_id},
     )
 
 

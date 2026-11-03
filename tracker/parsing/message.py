@@ -51,6 +51,7 @@ _FOREIGN_CURRENCY: Final = re.compile(FOREIGN_CURRENCY_PATTERN)
 _PER_ITEM: Final = re.compile(PER_ITEM_PATTERN)
 _NOT_A_TRANSACTION: Final = re.compile(NOT_A_TRANSACTION_PATTERN)
 _DESCRIPTION_EDGES: Final = string.punctuation + " "
+_LONG_NUMBER: Final = re.compile(r"[0-9]{8,}")  # A phone number in a note isn't something to keep (PR1).
 
 
 class Direction(StrEnum):
@@ -180,7 +181,7 @@ def _describe(cleaned: str, money: list[FoundAmount]) -> str:
         position = amount.end
     pieces.append(cleaned[position:])
     description = " ".join(" ".join(pieces).split()).strip(_DESCRIPTION_EDGES)
-    return description[:MAX_DESCRIPTION_CHARS]
+    return _LONG_NUMBER.sub("#", description)[:MAX_DESCRIPTION_CHARS]
 
 
 def parse_message(text: str) -> ParsedEntry | AmbiguousEntry | None:

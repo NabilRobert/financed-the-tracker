@@ -47,7 +47,7 @@ SENTINEL = "zzsentinelzz"
 SENTINEL_PHONE = "628120000098"
 SENTINEL_AMOUNT = "98.765"
 # Change this only together with CONSENT_NOTICE_VERSION: people agreed to the old text.
-PINNED_NOTICE_SHA256 = "9281225bce5a00b2a8aafed4f1254ff21a659c114415562f0ef1027ea528c8c0"
+PINNED_NOTICE_SHA256 = "db91a6489997f0f955dc7c7aeb3d4a975515f57a9860cfe3031e1a87fac7aae1"
 
 
 async def row_counts(owner_engine: AsyncEngine, person_id: int) -> dict[str, int]:
@@ -467,6 +467,8 @@ def test_the_notice_cannot_change_without_a_new_version() -> None:
         "tidak memakai model AI",
         "nomor kartu",
         "bukan layanan keuangan",
+        "ekspor",
+        "hapus data saya",
     ],
 )
 def test_the_notice_states_what_a_person_must_know(fact: str) -> None:

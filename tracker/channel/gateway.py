@@ -42,6 +42,15 @@ class ChannelStopped:
     status: str
 
 
+@dataclass(frozen=True)
+class Attachment:
+    """A file for one person, from their own `ekspor`."""
+
+    filename: str
+    content: bytes
+    caption: str
+
+
 class MalformedEventError(Exception):
     """A correctly signed event this code can't read."""
 
@@ -56,3 +65,5 @@ class Gateway(Protocol):
     async def identify(self, chat_id: str) -> Sender: ...
 
     async def send_text(self, to: str, text: str) -> None: ...
+
+    async def send_file(self, to: str, attachment: Attachment) -> None: ...
