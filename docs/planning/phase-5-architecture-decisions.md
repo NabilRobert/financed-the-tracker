@@ -66,6 +66,9 @@ legal advice.
 **Decision:** text logging with undo; categories; summaries on request;
 budgets with a monthly push. Details in Phase 2.
 
+**Changed 2026-11-03:** the monthly push became a summary with each person's first reply
+of the month, by Arthur's decision under ADR-022.
+
 **Rejected:** photo receipts in v1 (ADR-010).
 
 ## ADR-003: Meta's official Cloud API (settled); what the terms say
@@ -587,9 +590,10 @@ says the number can change.
   WhatsApp bills nothing here. A reply limit (R7), R6's rate limits and the reply-only
   rule replace the cap, because the risk is now a ban, not a bill. The cost that remains
   is the SIM.
-- **The monthly summary:** B4's push was a message the bot started, which this
-  decision bars. **Proposed, for Arthur to overrule:** it goes with a person's first
-  reply of the month.
+- **The monthly summary (settled by Arthur, 2026-11-03):** B4's push was a message the
+  bot started, which this decision bars. Last month's summary goes with each person's
+  first reply of the month instead. Someone who doesn't write in a month gets no summary,
+  which is the price of never starting a conversation.
 - **Privacy:** messages now arrive readable at Arthur's server, so the server, not Meta,
   is where text can leak. WhatsApp describes chats as end-to-end encrypted, so Meta
   should see metadata rather than text, but we haven't verified this.
@@ -607,7 +611,7 @@ says the number can change.
 | # | Decision | Rejected | Status |
 |---|---|---|---|
 | 001 | Arthur plus a few invited people, up to 5 in all | Arthur only; public | **Settled** |
-| 002 | Logging, undo, categories, summaries, budgets, monthly push | Photos | **Settled** |
+| 002 | Logging, undo, categories, summaries, budgets, monthly summary (with the first reply of the month since 2026-11-03) | Photos | **Settled** |
 | 003 | Meta's official Cloud API | Twilio, Baileys, Telegram | **Superseded by 022** |
 | 004 | pywa, FastAPI, standard stack, Postgres | OpenClaw, Hermes, plain httpx | Part superseded by 022 |
 | 005 | Own small ledger | Firefly III, Actual Budget | **Accepted** |
@@ -639,8 +643,7 @@ database, no model, $0. See the [slice plan](slice-plan.md).
 **For Arthur:**
 1. **WhatsApp's terms:** accept that using WAHA breaks them? This replaces section 4.2.
    Slices 1 to 4 are safe to build either way; the answer gates real use.
-2. **The monthly summary:** is the first reply of the month right (ADR-022)?
-3. **Name:** what shows in WhatsApp?
+2. **Name:** what shows in WhatsApp?
 
 **For the spikes:** WAHA's real payloads, and memory.
 
