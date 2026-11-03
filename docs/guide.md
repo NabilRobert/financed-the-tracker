@@ -5,55 +5,61 @@ This guide explains the repo in plain English. It covers the WhatsApp channel
 
 ## The flow: a webhook arrives
 
-Meta posts `makan 25rb` to `/webhook`. This is the whole journey, up to the parser
-and the ledger, which have their own sections below.
+Someone sends `makan 25rb`. WAHA, a WhatsApp client running beside the app, posts it to
+`/webhook`. This is the whole journey, up to the parser and the ledger, which have their
+own sections below.
 
 ```mermaid
 flowchart TD
-    M["Meta posts a webhook"] --> S{"receive:<br/>small enough and signed?"}
+    M["WAHA posts a signed event"] --> S{"receive:<br/>small enough and signed?"}
     S -->|no| R["401, 403 or 413: nothing runs"]
-    S -->|yes| P["split_into_single_messages"]
-    P --> H["pywa builds a typed Message and calls on_message"]
-    H --> C["Conversation.handle_text"]
-    C --> A{"_admit:<br/>known person, under the limit?"}
+    S -->|yes| P["read_event: a direct message from someone else?"]
+    P -->|no| I["Ignored"]
+    P -->|yes| D["identify: who is this?"]
+    D --> A{"Conversation._admit:<br/>known person, under the limit?"}
     A -->|no| Q["Silence, or one notice"]
     A -->|yes| N{"consented?"}
-    N -->|no| O["The notice, with Setuju and Tidak"]
-    N -->|yes| W["claim_message, then a command or the parser"]
+    N -->|no| O["The notice, or record setuju"]
+    N -->|yes| W["claim_message, then an answer, a command or the parser"]
     W --> T["Commit"]
-    T --> B["_send: the reply goes out"]
+    T --> B["send_text: the reply goes out"]
 ```
 
 1. **Check before reading.** `tracker/channel/webhook.py: receive` caps the body at
-   256 KB, then compares the signature in `_is_signed`. Nothing is parsed before
-   that, so a forged request reaches no code.
-2. **Split.** `split_into_single_messages` makes one body per message, because pywa
-   reads only the first. Each message goes with the sender whose id matches. If none
-   does, the webhook fails rather than guessing, because a guess could write to the
-   wrong ledger.
-3. **Hand to pywa.** It builds a typed `Message` and calls `on_message` in
-   `tracker/channel/bot.py`, which ignores groups and reactions.
+   256 KB, then `check_signature` compares an HMAC-SHA-512 of the raw body. Nothing is
+   parsed before that, so a forged request reaches no code.
+2. **Read the event.** `tracker/channel/waha.py: read_event` turns it into an
+   `IncomingMessage`, or nothing. It drops the bot's own messages, groups, broadcasts and
+   channels, so the bot can't loop or reply where others can read.
+3. **Work out who it is.** `identify` asks WAHA for the sender's LID and phone number.
+   The LID is the stable id. `@c.us` is the phone number itself.
 4. **Find the person.** `tracker/channel/conversation.py: _admit` asks the database
    who this is (`resolve_sender`). A stranger leaves a count and gets silence. Then
    `MessageLimiter.admit` checks the rate limits.
-5. **Check consent.** Without it, the person gets the notice and nothing is stored.
-6. **Claim the message.** `claim_message` records Meta's id. A repeat stops here.
-7. **Answer.** `run_command` handles commands. Anything else goes to `parse_message`
-   and is written, asked about, or explained (`_log_message`).
-8. **Commit, then reply.** The transaction ends, then `_send` calls Meta. If sending
+5. **Check consent.** Without it, the person gets the notice and nothing is stored about
+   the message. `setuju` only counts for a notice they were sent.
+6. **Claim the message.** `claim_message` records the message id. A repeat stops here.
+7. **Answer.** `_answer` looks for a typed answer to an open question, then `batal`, then
+   a command. Anything else goes to `parse_message`, and is written, asked about, or
+   explained (`_log_message`).
+8. **Commit, then reply.** The transaction ends, then `send_text` calls WAHA. If sending
    fails, the entry is safe and the failure is logged.
 
 If anything fails before the commit, the transaction rolls back and the webhook
-answers 500, so Meta sends it again. That's why pywa's duplicate cache is off.
+answers 500, so WAHA sends it again.
 
-**A question** (`kopi 25`, or anything above Rp10,000,000) becomes a row in
-`pending_entry` with buttons. Tapping one calls `confirm_pending_entry`, a single
-update that can only win once, so a double tap writes one entry.
+**Reply buttons don't work on WAHA,** so choices are typed. A question (`kopi 25`, or
+anything above Rp10,000,000) becomes a row in `pending_entry`, and the person replies
+`1`, `2`, `ya` or `batal`. Those words carry no id, so they can only reach the person's
+newest question, and a new entry closes any open one. `batal` with no question open undoes
+only the newest entry, so repeating it can't reach an older one.
+
+**Everything WhatsApp-specific is behind `tracker/channel/gateway.py`.** To replace WAHA,
+write one more class with those four methods. Nothing else changes.
 
 ## The flow: one message, start to finish
 
-Take the message `makan 25rb`. Nothing calls the parser yet except the tests;
-from slice 3, the WhatsApp handler will.
+Take the message `makan 25rb`, which `tracker/channel/conversation.py` hands to the parser.
 
 ```mermaid
 flowchart TD
@@ -96,7 +102,7 @@ flowchart TD
 
 ## The flow: from a parsed entry to the database
 
-Nothing calls this yet except the tests; from slice 3, the WhatsApp handler will.
+`tracker/channel/conversation.py` calls this for each message.
 
 ```mermaid
 flowchart TD
@@ -110,14 +116,14 @@ flowchart TD
     B --> R["WrittenEntry, committed"]
 ```
 
-1. **Find the person.** `tracker/ledger/people.py: find_person_id` turns the
+1. **Find the person.** `tracker/ledger/people.py: resolve_sender` turns the
    webhook's id into a `person.id`. It calls a small database function, because
    the app can't read the person table until a person is in scope.
 2. **Open a scope.** `tracker/ledger/scope.py: person_transaction` starts a
    transaction and sets `tracker.person_id` for that transaction only. Every
    ledger function takes the resulting `PersonScope`, so none can run without a
    person.
-3. **Claim the message.** `tracker/ledger/entries.py: write_entry` inserts Meta's
+3. **Claim the message.** `tracker/ledger/entries.py: claim_message` inserts the
    message id. If it's already there, this is a repeat delivery, and the function
    returns `None`.
 4. **Choose the category.** `tracker/ledger/categories.py: resolve_category`
@@ -175,12 +181,12 @@ because the app may set the person itself. Bound parameters do that job.
 
 | Answer | `parse_amount` | `parse_message` | What the bot will do |
 |---|---|---|---|
-| Sure | `int` | `ParsedEntry` | Write it, with an undo button |
+| Sure | `int` | `ParsedEntry` | Write it, and say `batal` undoes it |
 | A person must decide | `Ambiguous` | `AmbiguousEntry` | Ask, or refuse if `candidates` is empty |
 | Nothing to read | `None` | `None` | Say it didn't understand |
 
 The rule behind all of it: **a wrong number is worse than a question.** Asking
-costs one tap. A wrong amount costs trust in every total after it.
+costs one reply. A wrong amount costs trust in every total after it.
 
 ## How the tests are organised
 
@@ -221,15 +227,18 @@ costs one tap. A wrong amount costs trust in every total after it.
 | **False write** | The rules wrote something that should have been a question | `CorpusScore.false_writes` |
 | **Scope** | One transaction limited to one person | `PersonScope` |
 | **Row-level security (RLS)** | Postgres hides rows by a rule on the table, whatever the query says | `0001_ledger.py` |
-| **BSUID** | Meta's id for a person, which stays put when the phone number changes | `person.bsuid` |
 | **Void** | Undo: mark the entry, keep the row | `entries.py: void_entry` |
-| **Repeat delivery** | Meta sends the same message twice. The unique message id makes the second do nothing | `inbound_message` |
+| **Repeat delivery** | The same message arrives twice. The unique message id makes the second do nothing | `inbound_message` |
 | **Taught word** | A word a person linked to a category with `kategori transport` | `category_keyword` |
 | **Period** | A date range, from a start up to but not including an end | `summaries.py: Period` |
-| **Webhook** | Meta's HTTP call to us when a message arrives | `channel/webhook.py` |
-| **Signature** | A hash of the body made with a secret only Meta and we hold, proving Meta sent it | `_is_signed` |
+| **WAHA** | A self-hosted, unofficial WhatsApp client with an HTTP API. It runs beside the app and acts as a linked device | `ops/waha/`, `channel/waha.py` |
+| **Gateway** | The one small interface that hides WAHA from the rest of the code | `channel/gateway.py` |
+| **Session files** | What keeps WAHA logged in. Whoever holds them is the bot's WhatsApp account | `ops/waha/sessions/`, never committed |
+| **Webhook** | WAHA's HTTP call to us when a message arrives | `channel/webhook.py` |
+| **Signature** | A hash of the body made with a secret only WAHA and we hold, proving WAHA sent it | `check_signature` |
+| **LID** | WhatsApp's id for a person, ending `@lid`, which isn't their phone number | `Sender.whatsapp_id` |
 | **Allow-list** | Only people Arthur added can use the bot | `person`, `tracker/cli.py` |
-| **Pending entry** | An entry waiting for a person's tap, for up to 24 hours | `ledger/pending.py` |
+| **Pending entry** | An entry waiting for a person's typed answer, for up to 24 hours | `ledger/pending.py` |
 | **Consent notice** | What a person reads and agrees to before anything is stored. Its text is pinned to a version | `replies.py` |
 | **Suspension** | Arthur stops every read and write for a person | `tracker suspend` |
 | **Threat model** | The list of what could go wrong, and what stops each thing | `docs/planning/threat-model.md` |
@@ -257,7 +266,9 @@ costs one tap. A wrong amount costs trust in every total after it.
 | Change what the bot says | `tracker/channel/replies.py` |
 | Change the consent notice | Its text and `CONSENT_NOTICE_VERSION` together, then the pinned hash in `tests/test_channel_security.py`. People agreed to the old text |
 | Add a command | `run_command` in `channel/commands.py`, and `COMMAND_WORDS` in `keywords.py` so the parser leaves it alone |
-| Add a button | A payload in `channel/buttons.py`, then a branch in `_press_button` |
+| Replace WAHA | A new class implementing `Gateway`, then `create_app`. Nothing else knows |
+| Upgrade WAHA | The digest in `ops/waha/compose.yaml`, tested on the spare number first |
+| Get someone's records without WhatsApp | `tracker export <id> <file>`, with the owner's login |
 | Change a rate limit | `channel/ratelimit.py` |
 | Add a person | `tracker add 628...`, with the owner's login |
 | Stop a person | `tracker suspend <id>`, then `tracker resume <id>` |
@@ -274,7 +285,7 @@ costs one tap. A wrong amount costs trust in every total after it.
   name. With a real amount beside it, the message asks.
 - **Moving your own money counts as spending.** `nabung`, `tarik tunai` and
   `top up` have no type of their own, so P4's default applies. The reply shows
-  it, and undo is one tap.
+  it, and `batal` undoes it.
 - **`cepek` always asks.** Some speakers mean Rp100, others Rp100,000, so the
   bot offers both. It's one line in `AMBIGUOUS_SPELLED_AMOUNTS`.
 - **Deleting a person isn't here.** `hapus data saya` is slice 4, which needs a
@@ -284,7 +295,13 @@ costs one tap. A wrong amount costs trust in every total after it.
 - **An edited message changes nothing.** WhatsApp lets people edit a message, and
   the bot keeps the first version.
 - **A repeat of a message before consent sends the notice again.** Nothing may be
-  stored before **Setuju**, and that includes the message id.
-- **The channel hasn't met Meta.** See "The live check" in the slice plan.
+  stored before **setuju**, and that includes the message id.
+- **The channel hasn't met WhatsApp.** WAHA's event shapes come from its docs, and no
+  number has been linked. See "The live check" in the slice plan.
+- **The number can be banned without warning.** Records are safe, but replies stop until
+  a new number is linked. See ADR-022.
+- **A person known only by `@c.us` keeps the recycled-number risk,** because that id is
+  the number. A person with a LID doesn't.
+- **`batal` undoes the newest entry at any age.** The reply names what was undone.
 - **Two entries at the same moment can miss a warning.** Neither sees the other
   before it commits. The next entry in that category gives the warning.

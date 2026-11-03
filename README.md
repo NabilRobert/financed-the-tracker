@@ -3,9 +3,14 @@
 A personal finance tracker that lives in WhatsApp, for Arthur and a few invited
 people in Indonesia. You send "makan 25rb" and it is logged in exact rupiah.
 
+**It runs on [WAHA](https://waha.devlike.pro), an unofficial WhatsApp client.** WhatsApp's
+terms don't allow that, and the number can be banned without warning. Arthur chose this
+knowingly: [ADR-022](docs/planning/phase-5-architecture-decisions.md#adr-022-waha-replaces-metas-cloud-api)
+records the decision and its risks. The records live in Postgres and survive a ban.
+
 **Status: slice 3 of 8.** The parser, the ledger and the WhatsApp channel exist, and
-the channel is proved with signed fixtures only. It hasn't met Meta yet, there's no
-server, and no model is used.
+the channel is proved with signed fixtures only. No number has been linked yet, there's
+no server, and no model is used.
 
 **Security comes first:** no real person's data enters the system before
 [this gate](docs/planning/slice-plan.md#the-real-data-gate) passes. See
@@ -44,15 +49,16 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tracker/parsing/amount.py` | `parse_amount`: one amount's text to whole rupiah, or a refusal |
 | `tracker/parsing/message.py` | `parse_message`: a whole message to an entry, a question, or nothing |
 | `tracker/parsing/keywords.py` | The word lists: categories, income words, commands |
-| `tracker/channel/webhook.py` | The HTTP routes: size, signature, then dispatch |
-| `tracker/channel/bot.py` | pywa's handlers, and sending replies |
-| `tracker/channel/conversation.py` | What the bot does with a message or a tap |
+| `tracker/channel/webhook.py` | The HTTP route: size, signature, dispatch, and the only place that sends |
+| `tracker/channel/gateway.py` | The one interface to whatever carries messages |
+| `tracker/channel/waha.py` | The only file that knows WAHA's API |
+| `tracker/channel/conversation.py` | What the bot does with a message |
 | `tracker/channel/commands.py` | `rekap`, `budget`, `kategori`, `bantuan` |
 | `tracker/channel/replies.py` | Everything the bot says, including the consent notice |
 | `tracker/channel/settings.py` | Settings that refuse to start unsafely |
-| `tracker/channel/failures.py` | Keeps failures visible and content out of the logs |
-| `tracker/cli.py` | Arthur's commands: add, suspend and resume a person |
+| `tracker/cli.py` | Arthur's commands: add, suspend, resume and export |
 | `tracker/serve.py` | Runs the server |
+| `ops/waha/` | WAHA's pinned, loopback-only setup |
 | `tracker/ledger/scope.py` | `person_transaction`: the one way in, limited to one person |
 | `tracker/ledger/entries.py` | `write_entry` and `void_entry` |
 | `tracker/ledger/categories.py` | Choosing a category, and the words a person teaches it |
@@ -60,6 +66,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tracker/ledger/summaries.py` | Totals for a month or a week, in SQL |
 | `tracker/ledger/pending.py` | Entries waiting for a person's answer |
 | `tracker/ledger/people.py` | The allow-list, finding a webhook's sender, and consent |
+| `tracker/ledger/export.py` | A person's records as CSV, with no channel needed |
 | `migrations/` | The schema, row-level security and grants |
 | `ops/db/roles.sql` | The database logins |
 | `tests/corpus/` | The labelled messages and the rules for labelling them |

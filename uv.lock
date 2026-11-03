@@ -505,18 +505,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pywa"
-version = "4.5.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a5/50/beaa5be326e3b747d6c6b61c47b406fd105ac18f1200d6bff907258b3be2/pywa-4.5.0.tar.gz", hash = "sha256:29d7604b7e8ed2fb4eb8bda5a13dd04aac9177ce9bf21d4272a78f846f9a2320", size = 351877, upload-time = "2026-09-24T14:48:08.344Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/82/8771e7395308f52aa3aecb2f66df90dc7de09732515502ab17971b19ab6c/pywa-4.5.0-py3-none-any.whl", hash = "sha256:7de26b9a883bda3d9830de3325c9178e6153baecc184cbe8b4fb32e0c495a5fa", size = 379745, upload-time = "2026-09-24T14:48:06.972Z" },
-]
-
-[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -718,7 +706,6 @@ dependencies = [
     { name = "httpx" },
     { name = "limits" },
     { name = "pydantic" },
-    { name = "pywa" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "typer" },
     { name = "uvicorn" },
@@ -742,7 +729,6 @@ requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "limits", specifier = "==5.8.0" },
     { name = "pydantic", specifier = "==2.14.1" },
-    { name = "pywa", specifier = "==4.5.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.1.4" },
     { name = "typer", specifier = "==0.27.3" },
     { name = "uvicorn", specifier = "==0.54.0" },

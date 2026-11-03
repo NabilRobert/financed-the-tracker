@@ -4,7 +4,6 @@ from datetime import date
 from typing import Final
 
 from tracker.channel import replies
-from tracker.channel.replies import Reply
 from tracker.ledger.budgets import list_budgets, set_budget
 from tracker.ledger.categories import CategoryChange, change_entry_category, latest_entry_id
 from tracker.ledger.scope import PersonScope
@@ -40,40 +39,40 @@ def recap_period(words: list[str], today: date) -> Period | None:
     return None
 
 
-async def _recap(scope: PersonScope, words: list[str], today: date) -> Reply:
+async def _recap(scope: PersonScope, words: list[str], today: date) -> str:
     period = recap_period(words, today)
     if period is None:
-        return Reply(replies.RECAP_UNKNOWN)
+        return replies.RECAP_UNKNOWN
     return replies.recap(await summarise(scope, period))
 
 
-async def _budget(scope: PersonScope, words: list[str], today: date) -> Reply:
+async def _budget(scope: PersonScope, words: list[str], today: date) -> str:
     if not words:
         return replies.budget_list(await list_budgets(scope, today))
     if len(words) < 2:
-        return Reply(replies.BUDGET_HOW)
+        return replies.BUDGET_HOW
     category, amount_text = words[0], " ".join(words[1:])
     limit_rupiah = parse_amount(amount_text)
     if not isinstance(limit_rupiah, int):
-        return Reply(replies.BUDGET_HOW)
+        return replies.BUDGET_HOW
     if not await set_budget(scope, category, limit_rupiah):
-        return Reply(replies.BUDGET_UNKNOWN_CATEGORY)
+        return replies.BUDGET_UNKNOWN_CATEGORY
     return replies.budget_set(category.capitalize(), limit_rupiah)
 
 
-async def _category(scope: PersonScope, words: list[str]) -> Reply:
+async def _category(scope: PersonScope, words: list[str]) -> str:
     if not words:
-        return Reply(replies.CATEGORY_HOW)
+        return replies.CATEGORY_HOW
     entry_id = await latest_entry_id(scope)
     if entry_id is None:
-        return Reply(replies.NO_ENTRY_YET)
+        return replies.NO_ENTRY_YET
     category = " ".join(words)
     if await change_entry_category(scope, entry_id, category) is not CategoryChange.CHANGED:
-        return Reply(replies.CATEGORY_UNKNOWN)
+        return replies.CATEGORY_UNKNOWN
     return replies.category_changed(category.capitalize())
 
 
-async def run_command(scope: PersonScope, text: str, today: date, human_contact: str) -> Reply | None:
+async def run_command(scope: PersonScope, text: str, today: date, human_contact: str) -> str | None:
     """The reply to a command, or None if the message isn't one."""
     command, *words = clean_text(text).split() or [""]
     if command == "rekap":
@@ -83,7 +82,7 @@ async def run_command(scope: PersonScope, text: str, today: date, human_contact:
     if command == "kategori":
         return await _category(scope, words)
     if command == "bantuan":
-        return Reply(replies.help_text(human_contact))
+        return replies.help_text(human_contact)
     if command in ("hapus", "ekspor"):
-        return Reply(replies.not_built_yet(human_contact))
+        return replies.not_built_yet(human_contact)
     return None

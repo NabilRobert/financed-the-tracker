@@ -11,7 +11,6 @@ dependencies = [
     "fastapi==0.162.0",
     "limits==5.8.0",
     "pydantic==2.14.1",
-    "pywa==4.5.0",
     "httpx==0.28.1",
     "typer==0.27.3",
     "sqlalchemy[asyncio]==2.1.4",
@@ -58,6 +57,8 @@ max-complexity = 10
 "tests/**" = ["RUF001", "S311", "S105", "S608", "PLR0913"]
 # Migrations build SQL from fixed strings, never from input.
 "migrations/**" = ["S608"]
+# The consent notice is a text a person reads, and must stay one line per paragraph to be pinned.
+"tracker/channel/replies.py" = ["E501"]
 
 [tool.pyright]
 include = ["tracker", "tests", "migrations"]
@@ -78,6 +79,6 @@ asyncio_default_test_loop_scope = "session"
 # Every surviving mutant is a behaviour the tests don't pin down.
 source_paths = ["tracker/"]
 # The held-out set is a measurement, not a specification: it never steers the code.
-# The rupiah source scan reads files, and mutmut's rewritten copies aren't the source.
-pytest_add_cli_args_test_selection = ["tests/", "-k", "not holdout and not named_rupiah_in_python"]
-also_copy = ["tests/", "migrations/", "ops/", "alembic.ini"]
+# The source scans read files, and mutmut's rewritten copies aren't the source.
+pytest_add_cli_args_test_selection = ["tests/", "-k", "not holdout and not named_rupiah_in_python and not nothing_sends"]
+also_copy = ["tests/", "migrations/", "ops/", "alembic.ini", ".gitignore"]

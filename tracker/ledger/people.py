@@ -4,6 +4,7 @@ create_person and set_suspended need the owner's login, because tracker_app can'
 see other people. Arthur's CLI calls them. Everything else runs as tracker_app.
 """
 
+from dataclasses import dataclass
 from typing import Final
 
 from sqlalchemy import text
@@ -28,12 +29,12 @@ STARTER_CATEGORIES: Final[tuple[tuple[str, Direction], ...]] = (
 )
 
 
-async def create_person(owner_engine: AsyncEngine, *, bsuid: str | None = None, phone: str | None = None) -> int:
+async def create_person(owner_engine: AsyncEngine, *, whatsapp_id: str | None = None, phone: str | None = None) -> int:
     """Adds a person to the allow-list, with their starter categories."""
     async with owner_engine.begin() as connection:
         result = await connection.execute(
-            text("INSERT INTO person (bsuid, phone) VALUES (:bsuid, :phone) RETURNING id"),
-            {"bsuid": bsuid, "phone": phone},
+            text("INSERT INTO person (whatsapp_id, phone) VALUES (:whatsapp_id, :phone) RETURNING id"),
+            {"whatsapp_id": whatsapp_id, "phone": phone},
         )
         person_id: int = result.scalar_one()
         for name, direction in STARTER_CATEGORIES:
@@ -57,14 +58,14 @@ async def set_suspended(owner_engine: AsyncEngine, person_id: int, *, is_suspend
     return changed_id is not None
 
 
-async def resolve_sender(engine: AsyncEngine, bsuid: str, phone: str | None) -> int | None:
+async def resolve_sender(engine: AsyncEngine, whatsapp_id: str, phone: str | None) -> int | None:
     """The person a signed webhook names, or None for a stranger or a suspended person.
 
-    A first message from an allow-listed number links its BSUID and drops the number.
+    A first message from an allow-listed number links its id and drops the number.
     """
     async with engine.begin() as connection:
         return await connection.scalar(
-            text("SELECT tracker_resolve_sender(:bsuid, :phone)"), {"bsuid": bsuid, "phone": phone}
+            text("SELECT tracker_resolve_sender(:whatsapp_id, :phone)"), {"whatsapp_id": whatsapp_id, "phone": phone}
         )
 
 
@@ -74,21 +75,24 @@ async def count_unknown_sender(engine: AsyncEngine) -> None:
         await connection.execute(text("SELECT tracker_count_unknown_sender()"))
 
 
-async def change_bsuid(engine: AsyncEngine, old_bsuid: str, new_bsuid: str) -> bool:
-    """Follows a number change from Meta's signed system message (ADR-008)."""
-    async with engine.begin() as connection:
-        changed = await connection.scalar(
-            text("SELECT tracker_change_bsuid(:old_bsuid, :new_bsuid)"),
-            {"old_bsuid": old_bsuid, "new_bsuid": new_bsuid},
-        )
-    return bool(changed)
-
-
 async def has_consented(scope: PersonScope) -> bool:
     consented_at = await scope.connection.scalar(
         text("SELECT consented_at FROM person WHERE id = :person_id"), {"person_id": scope.person_id}
     )
     return consented_at is not None
+
+
+async def notice_sent_version(scope: PersonScope) -> str | None:
+    return await scope.connection.scalar(
+        text("SELECT notice_sent_version FROM person WHERE id = :person_id"), {"person_id": scope.person_id}
+    )
+
+
+async def record_notice_sent(scope: PersonScope, notice_version: str) -> None:
+    await scope.connection.execute(
+        text("UPDATE person SET notice_sent_version = :notice_version WHERE id = :person_id"),
+        {"person_id": scope.person_id, "notice_version": notice_version},
+    )
 
 
 async def record_consent(scope: PersonScope, notice_version: str) -> None:
@@ -100,3 +104,24 @@ async def record_consent(scope: PersonScope, notice_version: str) -> None:
         """),
         {"person_id": scope.person_id, "notice_version": notice_version},
     )
+
+
+@dataclass(frozen=True)
+class NewestEntry:
+    entry_id: int
+    category: str
+    amount_rupiah: int
+
+
+async def newest_entry(scope: PersonScope) -> NewestEntry | None:
+    """The person's newest entry, voided or not: what `batal` refers to."""
+    row = (
+        await scope.connection.execute(
+            text("""
+                SELECT e.id, c.name, e.amount_rupiah FROM entry e JOIN category c ON c.id = e.category_id
+                WHERE e.person_id = :person_id ORDER BY e.id DESC LIMIT 1
+            """),
+            {"person_id": scope.person_id},
+        )
+    ).one_or_none()
+    return None if row is None else NewestEntry(row.id, row.name, row.amount_rupiah)

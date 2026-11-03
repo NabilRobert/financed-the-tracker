@@ -18,8 +18,16 @@ from sqlalchemy.pool import NullPool
 from tracker.ledger.budgets import BudgetUse, list_budgets, set_budget
 from tracker.ledger.categories import CategoryChange, change_entry_category, resolve_category
 from tracker.ledger.entries import VoidOutcome, claim_message, void_entry
-from tracker.ledger.pending import NewPendingEntry, cancel_pending_entry, confirm_pending_entry, create_pending_entry
-from tracker.ledger.people import resolve_sender
+from tracker.ledger.pending import (
+    NewPendingEntry,
+    OpenQuestion,
+    cancel_pending_entry,
+    close_open_questions,
+    confirm_pending_entry,
+    create_pending_entry,
+    find_open_question,
+)
+from tracker.ledger.people import newest_entry, resolve_sender
 from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.ledger.summaries import month_period, summarise
 from tracker.parsing.message import Direction
@@ -277,7 +285,7 @@ async def test_every_link_between_peoples_tables_carries_person_id(owner_engine:
     assert list(rows) == []
 
 
-@pytest.mark.parametrize("function", ["tracker_resolve_sender", "tracker_count_unknown_sender", "tracker_change_bsuid"])
+@pytest.mark.parametrize("function", ["tracker_resolve_sender", "tracker_count_unknown_sender"])
 async def test_each_owner_function_is_for_the_app_alone_and_cannot_be_redirected(
     owner_engine: AsyncEngine, function: str
 ) -> None:
@@ -344,13 +352,13 @@ async def test_the_code_filters_reads_even_where_row_level_security_does_not_app
         assert await read(PersonScope(connection, bob)) == 0
 
 
-async def test_a_person_is_found_by_bsuid_without_reading_the_table(
+async def test_a_person_is_found_by_id_without_reading_the_table(
     owner_engine: AsyncEngine, app_engine: AsyncEngine, bob: int
 ) -> None:
     async with owner_engine.connect() as connection:
-        bsuid = await connection.scalar(text("SELECT bsuid FROM person WHERE id = :id"), {"id": bob})
-    assert await resolve_sender(app_engine, str(bsuid), None) == bob
-    assert await resolve_sender(app_engine, "ID.nobody", None) is None
+        whatsapp_id = await connection.scalar(text("SELECT whatsapp_id FROM person WHERE id = :id"), {"id": bob})
+    assert await resolve_sender(app_engine, str(whatsapp_id), None) == bob
+    assert await resolve_sender(app_engine, "nobody@lid", None) is None
 
 
 async def _pending_id_of(owner_engine: AsyncEngine, person_id: int) -> int:
@@ -369,6 +377,31 @@ async def test_a_tap_cannot_confirm_or_cancel_another_persons_pending_entry(
     async with person_transaction(app_engine, bob) as scope:
         assert await confirm_pending_entry(scope, pending_id, 0) is None
         assert not await cancel_pending_entry(scope, pending_id)
+
+
+async def test_the_code_finds_only_your_own_question_even_where_row_level_security_does_not_apply(
+    owner_engine: AsyncEngine, alice: int, bob: int
+) -> None:
+    pending_id = await _pending_id_of(owner_engine, alice)
+    async with owner_engine.begin() as connection:
+        assert await find_open_question(PersonScope(connection, bob)) is None
+        assert await find_open_question(PersonScope(connection, alice)) == OpenQuestion(pending_id, True)
+
+
+async def test_the_code_closes_only_your_own_questions_even_where_row_level_security_does_not_apply(
+    owner_engine: AsyncEngine, alice: int, bob: int
+) -> None:
+    async with owner_engine.begin() as connection:
+        await close_open_questions(PersonScope(connection, bob))
+        assert await find_open_question(PersonScope(connection, alice)) is not None
+
+
+async def test_the_code_finds_only_your_own_newest_entry_even_where_row_level_security_does_not_apply(
+    owner_engine: AsyncEngine, alice: int, bob: int
+) -> None:
+    assert alice
+    async with owner_engine.begin() as connection:
+        assert await newest_entry(PersonScope(connection, bob)) is None
 
 
 async def test_the_code_filters_pending_entries_even_where_row_level_security_does_not_apply(

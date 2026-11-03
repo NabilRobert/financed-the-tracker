@@ -9,6 +9,10 @@ HANDOVER*.md
 .env.*
 !.env.example
 
+# WAHA's session files are the WhatsApp account itself.
+.sessions/
+ops/waha/sessions/
+
 # Database dumps, logs and real messages
 *.dump
 *.sql.gz

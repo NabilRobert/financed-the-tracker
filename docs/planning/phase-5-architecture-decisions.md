@@ -2,18 +2,18 @@
 
 Short ADRs, 2026-10-30. **Settled** ones were decided with Arthur. He accepted
 ADRs 005 to 018 as recommended on 2026-11-02, with the questions under "For
-Arthur" still open. The summary table and the first slice are at the end.
+Arthur" still open. **ADR-022 moved the project to WAHA on 2026-11-02.** The ADRs it
+replaces stay here, marked, because the reasoning is part of the record. The
+summary table and the first slice are at the end.
 
 ```
-Person on WhatsApp ─► Meta Cloud API ─► Caddy ─► tracker (FastAPI + pywa)
-                                                   │
-                         rules parser ─────────────┤  (pure code, $0)
-                         model fallback ───────────┤  off in v1; proposes only
-                                                   ▼
-                                     code validates and writes ─► Postgres
-                                                   │              (own database, own login)
-monthly job (cron + Typer) ──── template ──► Meta  │
-                                                   ▼
+Person on WhatsApp ─► WhatsApp ─► WAHA (GOWS, a linked device) ─► tracker (FastAPI)
+                                   loopback only                    │
+                         rules parser ──────────────────────────────┤  (pure code, $0)
+                         model fallback ────────────────────────────┤  off in v1; proposes only
+                                                                    ▼
+                                                      code validates and writes ─► Postgres
+                                                                    │              (own database, own login)
                      traces ─► agent-observability    probes ─► systems-monitoring
 ```
 
@@ -26,7 +26,7 @@ knows no slang. Neither fits, so there is nothing to depend on.
 
 | Part | Reused | Built (and why) |
 |---|---|---|
-| WhatsApp webhooks and messages | **pywa** (ADR-004), approved in Juku's Phase 5 | Handlers, and the routes in front of them (ADR-021) |
+| WhatsApp messages | **WAHA** (ADR-022) | A thin adapter, and the routes in front of it |
 | HTTP, validation, data, CLI, tests | Arthur's standard stack | — |
 | Model calls, if on | **PydanticAI**, set up as in Juku | The typed proposal |
 | Evals | **Inspect AI** for the model; pytest for the rules (ADR-014) | The corpus |
@@ -70,6 +70,8 @@ budgets with a monthly push. Details in Phase 2.
 
 ## ADR-003: Meta's official Cloud API (settled); what the terms say
 
+> **Superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** This is the plan before the move. Its risk table is now WhatsApp's own terms.
+
 **Decision:** Meta's WhatsApp Cloud API only.
 
 **The general-purpose AI ban doesn't catch this project.** Section 4.7 of
@@ -95,6 +97,8 @@ models, which limits the provider choice (ADR-007).
   parser and ledger know nothing of the channel, so that escape stays cheap.
 
 ## ADR-004: pywa with FastAPI (settled)
+
+> **Superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** FastAPI and the rest of the stack stay; pywa goes.
 
 **Decision:** `pywa` 4.5.x (MIT, released 2026-09-24) on Python 3.12, with
 FastAPI, Pydantic, SQLAlchemy 2 and Alembic, Typer, pytest, uv, ruff and
@@ -191,6 +195,8 @@ Arthur's OK on a separate top-up, and the eval in slice 7.
 
 ## ADR-008: Identity comes from the signed webhook, keyed on BSUID
 
+> **Superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** Identity still comes only from the signed webhook. A BSUID doesn't exist on WAHA.
+
 **Decision:** `person` is keyed on Meta's business-scoped user id (BSUID).
 The phone number is optional.
 
@@ -218,6 +224,9 @@ data, so one layer isn't enough. It costs one migration.
 
 ## ADR-010: Privacy: what each party can see
 
+> **Part superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** The table below
+> describes Cloud API. On WAHA, readable messages reach Arthur's server, not Meta.
+
 | Who | Sees | Keeps |
 |---|---|---|
 | **Meta** | All message text, in the clear: Cloud API decrypts it before forwarding, and holds the keys | Up to 30 days, per its docs |
@@ -242,6 +251,9 @@ data, so one layer isn't enough. It costs one migration.
 
 ## ADR-011: Budget warnings travel with the reply; the push is a template
 
+> **Part superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** Warnings still
+> travel with the reply. The monthly push and its template are gone.
+
 **Decision:**
 - A warning goes in the same message as the entry's reply. It's inside the
   24-hour window, needs no template and doesn't hit the 6-second limit.
@@ -257,6 +269,8 @@ data, so one layer isn't enough. It costs one migration.
   job doesn't need it.
 
 ## ADR-012: Costs, and a hard cap
+
+> **Superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** There are no per-message prices, so the cap and the reply counter go.
 
 **Meta's prices** ([calculator](https://whatsappbusiness.com/products/platform-pricing/#rates),
 Indonesia, IDR, read 2026-10-30):
@@ -372,6 +386,8 @@ paling boros di mana?").
 
 ## ADR-017: Test number first, then a dedicated SIM
 
+> **Superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** There's no test number. A spare SIM comes first, and a personal number is still never used.
+
 **Answers Arthur's question: a personal number won't do, and the test
 number covers only part of the project.**
 - **Personal number:** Meta's docs say a number already on WhatsApp can't
@@ -467,6 +483,8 @@ and dogfooding. A slice can slip for a security reason, and the plan accepts tha
 
 ## ADR-021: Our own webhook routes, with pywa behind them
 
+> **Superseded by [ADR-022](#adr-022-waha-replaces-metas-cloud-api).** Our routes stay, with an adapter in place of pywa. The batch split and the log containment go with it.
+
 **Decision (slice 3):** two FastAPI routes check the size and the signature, split a
 webhook into single messages, and hand each to pywa's `webhook_update_handler`. pywa
 still parses updates, runs the typed handlers and sends replies, so this is the glue
@@ -496,31 +514,114 @@ closed in our code, not in a default.
   it does well.
 - *`pydantic-settings`:* a dependency for eight lines.
 
+## ADR-022: WAHA replaces Meta's Cloud API
+
+**Decision (settled by Arthur, 2026-11-02):** "meta is harder to get approval for so
+waha". The project moves to [WAHA](https://waha.devlike.pro), a self-hosted WhatsApp
+HTTP API. It works as a linked device on a dedicated number, the way WhatsApp Web does.
+
+**This reverses ADR-003, which rejected unofficial WhatsApp Web links.** It also
+removes a point of the positioning in Phase 1: this is no longer the official route,
+and the portfolio has to say so plainly.
+
+**WAHA against the "must fit" list (read 2026-11-02):**
+
+| Item | Finding |
+|---|---|
+| Licence | Apache-2.0. WAHA Plus no longer exists: its features joined the free image in 2026.6.1. `package.json` says `UNLICENSED`, which is npm's no-publish marker; the LICENSE file governs |
+| Maintained | Eight releases since June, the latest on 2026-10-28, but mostly two authors |
+| Cost | $0 |
+| Small server | Fits on paper: WAHA's FAQ gives 0.1 CPU and 200 MB for GOWS, and also recommends 2 CPUs and 4 GB for any use. Third parties report 250 to 342 MiB. Not measured here: spike 3 does that |
+| Private data | Self-hosted, but session files aren't described as encrypted, so they're treated as plaintext |
+
+**Engine: GOWS,** pinned by digest in `ops/waha/compose.yaml`.
+
+| Engine | Verdict |
+|---|---|
+| **GOWS** (Go, whatsmeow) | **Chosen.** No browser, lightest in WAHA's table, the "future replacement" for NOWEB, updated the same day as WAHA's latest release, and its Lids API can look up an unknown id. A memory leak was reported (issue #1708), so it has a hard cap |
+| NOWEB (Baileys) | Rejected: as light, but WAHA's fork is pinned to April 2026 |
+| WEBJS, WPP (a browser) | Rejected: Chromium is the heaviest choice for a small shared server, for no feature this needs |
+
+**The risks, plainly:**
+
+| Risk | What's true | What we do |
+|---|---|---|
+| **Unofficial client** | WAHA isn't affiliated with WhatsApp, and says so. WhatsApp doesn't allow bots or unofficial clients | Accepted by Arthur. The consent notice says it |
+| **WhatsApp's terms** | They bar "bulk messaging, auto-messaging", and "any non-personal use" unless authorised. Reverse engineering is barred too, which is how these clients work. Using WAHA breaks these terms | Same question as section 4.2 was, under WhatsApp's terms. **Open, and it gates real use** |
+| **Account ban** | WhatsApp may suspend "anytime for any reason". A WAHA user reports two numbers banned within weeks despite care (issue #1362). Assume it will happen, without warning and with no appeal | A dedicated SIM, never Arthur's personal number. Reply only, low volume, no bulk or unsolicited messages |
+| **Breakage** | WhatsApp can change its protocol at any time, and WAHA's docs warn that payloads differ by engine. Reply buttons already don't work: "DEPRECATED - Buttons do not work at the moment!" | Typed words, not buttons. An adapter with one small interface. The image is pinned, and upgrades are tested first |
+| **Losing access to records** | The chat can vanish overnight | The ledger is Arthur's Postgres, and never depended on WhatsApp |
+| **Session theft** | WAHA's session files let their holder act as the account. WAHA reported bots hijacking exposed sessions in April 2025 | Never public, an API key, owner-only files, kept out of backups |
+| **Few maintainers** | Mostly two people | The adapter is small, and the ledger doesn't depend on it |
+| **Portfolio** | A reviewer may read this as ignoring the terms. Project 9 no longer shows the official route | The honest record of why, and of the risk taken, is the portfolio entry |
+
+**If the number is banned:** nobody's records are lost. Replies stop, and new
+messages go unlogged until a new number is linked. Entries, budgets and consent stay
+in Postgres, and in encrypted backups, untouched. Arthur tells each person by another
+route. `tracker export` writes a person's data to a CSV with WAHA stopped, and `ekspor`
+(slice 4) sends it in chat while the channel works. People are keyed on their own ids,
+not the bot's number, so a new number needs no new consent, though the notice
+says the number can change.
+
+**What changes:**
+- **Identity:** a sender is `@lid` or `@c.us`. We key on the LID when WAHA gives one, and
+  `@c.us` is the phone number itself, so a person known only that way keeps the
+  recycled-number risk (T12) and the number stays stored. A sender we can't resolve is a
+  stranger.
+- **Buttons become typed words:** `setuju`, `tidak`, `ya`, `1`, `2`, `batal`. A new entry
+  closes any open question, so a late `ya` can't answer an old one. `batal` undoes only
+  the newest entry, so repeating it can't reach an older one.
+- **Consent keeps its version:** the notice sent is recorded, so `setuju` can only agree
+  to a notice the person was sent.
+- **Webhooks:** HMAC-SHA-512 over the raw body, and it fails closed. WAHA's timestamp
+  isn't signed, so a replay is stopped by the unique message id, not by age.
+- **The adapter:** `tracker/channel/gateway.py` is one small interface, and
+  `tracker/channel/waha.py` its only WAHA-aware file, so the official API can return.
+- **Reply only:** the bot never starts a conversation, and only the webhook path sends.
+- **Costs:** Meta's prices, templates, the reply counter and the Rp25,000 cap are gone.
+  WhatsApp bills nothing here. R6's rate limits and the reply-only rule replace the cap,
+  and the cost that remains is the SIM.
+- **The monthly summary:** B4's push was a message the bot started, which this
+  decision bars. **Proposed, for Arthur to overrule:** it goes with a person's first
+  reply of the month.
+- **Privacy:** messages now arrive readable at Arthur's server, so the server, not Meta,
+  is where text can leak. WhatsApp describes chats as end-to-end encrypted, so Meta
+  should see metadata rather than text, but we haven't verified this.
+
+**Rejected:**
+- *Stay on Meta's Cloud API:* the reason for moving is that approval is harder. It
+  remains the way back, and the adapter keeps that door open.
+- *Twilio or another official provider:* the same approval, plus a fee.
+- *Baileys or whatsmeow directly:* the same terms risk, with the session handling written
+  by hand.
+- *Telegram:* no terms problem, but Arthur asked for WhatsApp.
+
 ## Decisions
 
 | # | Decision | Rejected | Status |
 |---|---|---|---|
 | 001 | Arthur plus a few invited people, up to 5 in all | Arthur only; public | **Settled** |
 | 002 | Logging, undo, categories, summaries, budgets, monthly push | Photos | **Settled** |
-| 003 | Meta's official Cloud API | Twilio, Baileys, Telegram | **Settled** |
-| 004 | pywa, FastAPI, standard stack, Postgres | OpenClaw, Hermes, plain httpx | **Settled** |
+| 003 | Meta's official Cloud API | Twilio, Baileys, Telegram | **Superseded by 022** |
+| 004 | pywa, FastAPI, standard stack, Postgres | OpenClaw, Hermes, plain httpx | Part superseded by 022 |
 | 005 | Own small ledger | Firefly III, Actual Budget | **Accepted** |
 | 006 | BIGINT rupiah; void, don't delete | NUMERIC, floats, double-entry | **Accepted** |
 | 007 | Rules first; model proposes substrings only; off in v1 | Model first, model-supplied numbers, free-tier APIs, local model | **Accepted** |
-| 008 | BSUID as the user key | Phone number | **Accepted** |
+| 008 | BSUID as the user key | Phone number | **Superseded by 022** |
 | 009 | Scoped code plus row-level security | Code only, one database each | **Accepted** |
-| 010 | Consent notice, minimal storage, no photos; local storage if available | Raw message storage | **Accepted** |
-| 011 | Warnings in replies; monthly template by cron | Template per warning, APScheduler | **Accepted** |
-| 012 | Count replies; Rp25,000 monthly cap; keep logging past it | No cap, stop logging | **Accepted**; the Rp25,000 figure stays open |
+| 010 | Consent notice, minimal storage, no photos; local storage if available | Raw message storage | Part superseded by 022 |
+| 011 | Warnings in replies; monthly template by cron | Template per warning, APScheduler | Part superseded by 022 |
+| 012 | Count replies; Rp25,000 monthly cap; keep logging past it | No cap, stop logging | **Superseded by 022** |
 | 013 | Commit before replying; no queue | Redis, Celery | **Accepted** |
 | 014 | pytest corpus for rules; Inspect AI for the model | agent-eval-harness | **Accepted** |
 | 015 | agent-observability and systems-monitoring | A new Grafana | **Accepted** |
 | 016 | MCP-backbone and gateway after v1 | Adding them now | **Accepted** |
-| 017 | Test number, then a dedicated SIM | Personal number, Business app number | **Accepted** |
+| 017 | Test number, then a dedicated SIM | Personal number, Business app number | **Superseded by 022** |
 | 018 | One capped container, existing Postgres, after Juku's deploy | New server, serverless | **Accepted** |
 | 019 | Async SQLAlchemy with `text()`, two logins, a scope on every call | ORM models, psycopg, `FORCE` RLS | **Made in slice 2** |
 | 020 | Security wins over speed, features and cost; a gate before real data | Security as an equal concern, field encryption, a paid test | **Settled** |
-| 021 | Our own webhook routes, with pywa behind them | pywa's server, httpx alone, `pydantic-settings` | **Made in slice 3** |
+| 021 | Our own webhook routes, with pywa behind them | pywa's server, httpx alone, `pydantic-settings` | Part superseded by 022 |
+| 022 | WAHA with the GOWS engine, behind one adapter | Meta's Cloud API, Twilio, Baileys directly, Telegram, NOWEB, WEBJS | **Settled** |
 
 ## The first slice
 
@@ -530,15 +631,12 @@ database, no model, $0. See the [slice plan](slice-plan.md).
 ## Open questions
 
 **For Arthur:**
-1. **Section 4.2:** accept the risk that entries could count as Prohibited
-   Information? Slices 1 to 4 are safe to build either way; the answer
-   gates real use.
-2. **The Meta account:** sign up as an individual and declare the use?
-3. **The monthly cap:** is Rp25,000 right?
-4. **Name:** what shows in WhatsApp? Meta may review display names.
+1. **WhatsApp's terms:** accept that using WAHA breaks them? This replaces section 4.2.
+   Slices 1 to 4 are safe to build either way; the answer gates real use.
+2. **The monthly summary:** is the first reply of the month right (ADR-022)?
+3. **Name:** what shows in WhatsApp?
 
-**For the spikes:** pywa's handler timing and comparison method; the test
-number's limit; memory; local storage for Indonesia; template category.
+**For the spikes:** WAHA's real payloads, and memory.
 
 **For later:** Sumopod's data terms, and the fallback's budget.
 
@@ -559,6 +657,21 @@ number's limit; memory; local storage for Indonesia; template category.
 [pywa on PyPI](https://pypi.org/project/pywa/) ·
 [pywa server code](https://github.com/david-lev/pywa/blob/master/pywa/server.py) ·
 [UU 27/2022](https://jdih.kemenkeu.go.id/download/46c17b53-4a45-411c-9b76-c6799e5769fc/UU_Nomor_27_Tahun_2022%20Perlindungan%20Data%20Pribadi.pdf)
+
+**WAHA, read 2026-11-02:**
+[repository](https://github.com/devlikeapro/waha) ·
+[gows-plus](https://github.com/devlikeapro/gows-plus) ·
+[engines](https://waha.devlike.pro/docs/how-to/engines/) ·
+[events](https://waha.devlike.pro/docs/how-to/events/) ·
+[security](https://waha.devlike.pro/docs/how-to/security/) ·
+[storages](https://waha.devlike.pro/docs/how-to/storages/) ·
+[sending](https://waha.devlike.pro/docs/how-to/send-messages/) ·
+[FAQ](https://waha.devlike.pro/docs/overview/faq/) ·
+[Plus is now Core](https://waha.devlike.pro/blog/waha-2026-6/) ·
+[security alert](https://waha.devlike.pro/blog/security-alert/) ·
+[ban report](https://github.com/devlikeapro/waha/issues/1362) ·
+[GOWS memory report](https://github.com/devlikeapro/waha/issues/1708) ·
+[WhatsApp's terms](https://www.whatsapp.com/legal/terms-of-service)
 
 **Secondary, used only where marked:**
 [Cyber Security News on the OpenClaw chain](https://cybersecuritynews.com/whatsapp-message-openclaw-remote-access-tool/) ·

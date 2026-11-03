@@ -15,7 +15,7 @@ A_DAY = date(2026, 11, 2)
 
 async def new_person(owner_engine: AsyncEngine) -> int:
     """A person who has consented, as every ledger test assumes."""
-    person_id = await create_person(owner_engine, bsuid=f"ID.{uuid.uuid4().hex}")
+    person_id = await create_person(owner_engine, whatsapp_id=f"{uuid.uuid4().hex}@lid")
     async with person_transaction(owner_engine, person_id) as scope:
         await record_consent(scope, "test-notice")
     return person_id

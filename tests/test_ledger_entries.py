@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.ledger.categories import CategoryChange, change_entry_category, resolve_category
 from tracker.ledger.entries import EntrySource, VoidOutcome, claim_message, void_entry, write_entry
-from tracker.ledger.pending import NewPendingEntry, create_pending_entry
+from tracker.ledger.pending import NewPendingEntry, confirm_pending_entry, create_pending_entry
 from tracker.ledger.scope import person_transaction
 from tracker.parsing.amount import MAX_ENTRY_RUPIAH
 from tracker.parsing.message import Direction, ParsedEntry, parse_message
@@ -132,6 +132,18 @@ async def test_a_message_with_a_nul_byte_reaches_the_database_safely(app_engine:
     parsed = parse_message("makan\x00 siang 25rb")
     assert isinstance(parsed, ParsedEntry)
     await add_entry(app_engine, person, parsed)
+
+
+async def test_a_second_reading_that_does_not_exist_writes_nothing(app_engine: AsyncEngine, person: int) -> None:
+    async with person_transaction(app_engine, person) as scope:
+        inbound_id = await claim_message(scope, f"wamid.single-{person}")
+        category = await resolve_category(scope, "", Direction.SPENDING, "Makan")
+        assert inbound_id is not None
+        pending_id = await create_pending_entry(
+            scope, inbound_id, NewPendingEntry((1_000,), Direction.SPENDING, category, "x", A_DAY)
+        )
+        assert await confirm_pending_entry(scope, pending_id, 1) is None
+        assert await confirm_pending_entry(scope, pending_id, 0) is not None
 
 
 @pytest.mark.parametrize("column", ["first_amount_rupiah", "second_amount_rupiah"])

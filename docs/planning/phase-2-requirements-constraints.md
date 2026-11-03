@@ -7,25 +7,24 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 
 1. **Joining.** Arthur adds a person's number with a CLI command. They send
    the bot any message. The bot replies with a short notice in Indonesian:
-   what is stored, and that Meta and, if the fallback is on, a model
-   provider can see their messages. They tap **Setuju**. Nothing is stored
-   about their messages before that.
+   what is stored, that this is an unofficial channel, and who can see what. They
+   reply **setuju**. Nothing is stored about their messages before that.
 2. **Logging.** "makan 25rb".
-   1. Meta posts a signed webhook; the app checks the signature.
-   2. It records Meta's message id, so a repeat delivery does nothing.
+   1. WAHA posts a signed webhook; the app checks the signature.
+   2. It records the message id, so a repeat delivery does nothing.
    3. The rules parse the text.
    4. Code validates and writes the entry.
-   5. The bot replies "Tercatat: Makan Rp25.000" with a **Batal** button.
+   5. The bot replies "Tercatat pengeluaran: Makan Rp25.000", and says **batal** undoes it.
 3. **When it isn't sure.** "kopi 25" could be Rp25 or Rp25.000. The bot asks
-   before writing anything, with **Ya** and **Batal** buttons.
+   before writing anything, and the person replies **1**, **2** or **batal**.
 4. **When rules can't parse it.** With the fallback off (the v1 default),
    the bot says what it understood and gives an example. With it on, the
    model proposes, code validates, and the person confirms.
 5. **Budgets.** "budget makan 2jt" sets a monthly limit. When an entry
    crosses 80% or 100%, the warning is part of that entry's reply.
 6. **Summaries.** "rekap" gives this month's totals per category, computed
-   in SQL. On the 1st, a template message sends last month's summary.
-7. **Leaving.** "hapus data saya", confirmed with a button, deletes
+   in SQL. Last month's summary goes with a person's first reply of the month.
+7. **Leaving.** "hapus data saya", confirmed by a typed reply, deletes
    everything about that person.
 
 ## Requirements
@@ -54,7 +53,7 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 - **L3.** Undo sets `voided_at`. It never deletes or edits. A correction is
   a void plus a new entry.
 - **L4.** Undo is safe to repeat, and works only on the sender's own entry.
-- **L5.** Writes are unique on Meta's message id, so a repeat delivery
+- **L5.** Writes are unique on the message id, so a repeat delivery
   can't add a second entry.
 - **L6.** An entry above `MAX_UNCONFIRMED_RUPIAH` (10,000,000) always asks
   first, even when the rules are sure.
@@ -65,7 +64,7 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 - **M2.** The model never supplies the amount as a number. It returns
   `amount_text`, which must be an exact substring of the message and must
   pass the same amount parser as P1.
-- **M3.** Every proposal needs a person's **Ya**. Pending proposals expire
+- **M3.** Every proposal needs a person's **ya**. Pending proposals expire
   after `PENDING_EXPIRY_HOURS` (24).
 - **M4.** A failed, slow or refused model call falls back to the "belum
   paham" reply. It never blocks a message.
@@ -87,21 +86,22 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 - **B2.** Warnings at 80% and 100% are sent **once** per category and month,
   inside the entry's reply (ADR-011).
 - **B3.** Undoing an entry recalculates the budget.
-- **B4.** On the 1st at 08:00 WIB, one utility template per consenting
-  person carries last month's total. It can't be sent twice for one month.
+- **B4.** Last month's total goes with a person's first reply of the month. It can't
+  be sent twice for one month, and the bot never starts a conversation (ADR-022).
 
 **Identity and consent (ADR-008, ADR-009)**
 - **I1.** The sender's identity comes only from the signed webhook. No
   command takes a user id.
-- **I2.** Users are keyed on Meta's business-scoped user id (BSUID), with
-  the phone number optional, and number changes handled from Meta's system
-  message.
+- **I2.** Users are keyed on their `@lid` when WAHA gives one, otherwise on `@c.us`.
+  Arthur adds them by number, and the number is dropped once a LID is known. A sender
+  that can't be resolved is a stranger.
 - **I3.** Unknown senders get no reply, which also costs nothing. Only a
   count is kept, not their number.
-- **I4.** No entry is stored before **Setuju**, and the time is recorded.
+- **I4.** No entry is stored before **setuju**, and the time is recorded.
 - **I5.** Database-level isolation between people, tested (ADR-009).
-- **I6.** `hapus data saya` deletes every row for that person. **`ekspor`
-  (Should)** sends their data as a CSV.
+- **I6.** `hapus data saya` deletes every row for that person. **`ekspor`** sends
+  their data as a CSV. It's a Must now, as is **`tracker export`**, which works with
+  WAHA stopped, because the channel can vanish (ADR-022).
 - **I7.** The consent record holds the time and the version of the notice
   agreed to.
 - **I8.** Arthur can suspend a person, which stops every read and write for
@@ -127,18 +127,17 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
   | Unparsed text | 30 days, Arthur's only (PR5) |
   | Pending entries | 24 hours (M3) |
   | Message ids without an entry | 30 days; with one, as long as the entry |
-  | Reply records | 90 days, for the monthly counter |
   | Backups | A fixed period, set in slice 5 and stated in the notice |
 
 - **PR7.** A deletion survives a restore. A list of deleted person ids, with
   nothing else about them, is re-applied after any restore.
 
 **Reliability (ADR-013)**
-- **R1.** Startup refuses to run without the app secret, so signature
+- **R1.** Startup refuses to run without the webhook secret, so signature
   checks can't be silently off.
 - **R2.** Unsigned or badly signed requests get 401 or 403 and do nothing.
 - **R3.** Sending failures retry with backoff (tenacity), and the entry is
-  already safe by then. Delivery status is recorded.
+  already safe by then.
 - **R4.** A failure in a handler is visible: it is recorded and alerts,
   rather than being lost behind a 200.
 - **R5.** `/healthz` checks the database, for the monitoring probe.
@@ -150,8 +149,8 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
 - **E1.** A labelled corpus, with a held-out set the rules are never tuned
   on, runs in CI. Wrong amounts must stay at 0.
 - **E2.** Spans follow agent-observability's conventions. No content.
-- **E3.** A monthly reply counter, from delivery records, alerts Arthur at
-  80% of the free tier and stops paid replies at the cap (ADR-012).
+- **E3.** Arthur is alerted when WAHA's session stops working, since a ban looks like a
+  quiet day.
 
 ## Threats (Phase 3)
 
@@ -163,9 +162,9 @@ cost ([ADR-020](phase-5-architecture-decisions.md#adr-020-security-comes-first))
 
 ```mermaid
 flowchart LR
-    U[Person on WhatsApp] --> M[Meta Cloud API]
-    M -->|signed webhook| C[Caddy]
-    C --> A[FastAPI + pywa]
+    U[Person on WhatsApp] --> M[WhatsApp]
+    M --> C[WAHA, loopback only]
+    C -->|signed webhook| A[FastAPI]
     A --> D{Duplicate or<br/>unknown sender?}
     D -->|yes| X[Stop]
     D -->|no| R[Rules parser]
@@ -176,37 +175,34 @@ flowchart LR
     F -->|yes| L[Model proposes]
     L --> V[Code validates]
     V --> P
-    P -->|person taps Ya| W
+    P -->|person replies ya| W
     W --> DB[(Postgres)]
-    W --> Y[Reply with Batal]
-    Y --> M
+    W --> Y[Reply, batal to undo]
+    Y --> C
 ```
 
 **Tables:**
 
 | Table | Holds |
 |---|---|
-| `person` | BSUID or a number awaiting its first message, consent time and notice version, suspension time |
-| `inbound_message` | Meta's message id (unique), person, time, outcome. No text |
+| `person` | WhatsApp id, or a number awaiting its first message; the notice sent, consent time and notice version; suspension time |
+| `inbound_message` | The message id (unique), person, time, outcome. No text |
 | `entry` | Person, direction, `amount_rupiah`, category, description, `occurred_on`, `voided_at`, source (`rules` or `model`) |
 | `pending_entry` | A proposal waiting for **Ya**, with its expiry |
 | `category` and `category_keyword` | Per-person lists |
 | `budget` | Person, category, `limit_rupiah` |
 | `budget_warning` | Unique on person, category, month, threshold |
-| `monthly_push` | Unique on person, month |
-| `outbound_message` | Meta's id, category, status, for counting replies |
+| `monthly_summary` | Unique on person, month |
 | `unknown_sender_count` | Strangers per day, and nothing else |
 
 ## Constraints
 
-**Meta (checked 2026-10-30; details in ADR-003 and ADR-012)**
-- Replies are limited to one every 6 seconds per user, so a warning shares
-  the entry's message.
-- Free-form replies only inside the 24-hour window. Anything later needs an
-  approved template.
-- Automated replies need a clear path to a human: `bantuan` gives Arthur's
-  contact.
-- The number must not be on any WhatsApp app.
+**WhatsApp, through WAHA (read 2026-11-02; details in ADR-022)**
+- Reply only. The bot never starts a conversation, and sends nothing in bulk.
+- Reply buttons don't work, so every choice is a typed word.
+- The number must be a dedicated SIM, never a personal one.
+- The account can be banned without warning, so the ledger can't depend on it.
+- Automated replies still need a path to a human: `bantuan` gives Arthur's contact.
 
 **Money:** model spend is $0. The Sumopod balance is $0, and the $5 there is
 reserved for Juku's slice 7. v1 works with the fallback off.
@@ -218,7 +214,7 @@ tighter resource (ADR-018).
 is ready for this data. Slices before that are local and free.
 
 **Public repo:** no server addresses, no real phone numbers, no real
-messages from anyone. Corpus messages are written by hand.
+messages from anyone, no session files. Corpus messages are written by hand.
 
 ## Priorities
 

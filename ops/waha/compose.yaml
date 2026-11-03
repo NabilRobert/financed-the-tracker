@@ -1,0 +1,24 @@
+# WAHA for the tracker: unofficial, so it's locked down (ADR-022, threat model T35 to T38).
+# The API and dashboard must never be public: WAHA has seen bots hijack exposed sessions.
+#
+# The image is pinned by digest. An upgrade is a reviewed change, tested on the spare
+# number first, because WAHA's payloads change between engines and versions.
+# ./sessions holds the WhatsApp account: never commit it, and keep it out of backups.
+services:
+  waha:
+    image: devlikeapro/waha:gows-2026.10.1@sha256:1f7faeb0227ad5edb5711f7058bfce807ea65e5f92234af0778e4db140f6eb46
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      # sha512:<hex of the key>, so the plain key isn't in this container's environment.
+      WAHA_API_KEY: ${WAHA_API_KEY_SHA512:?set the hashed API key}
+      WAHA_DASHBOARD_ENABLED: "False"
+      WHATSAPP_SWAGGER_ENABLED: "False"
+      WAHA_LOG_LEVEL: warn
+    volumes:
+      - ./sessions:/app/.sessions
+    # A guess from WAHA's FAQ and third-party reports. Spike 3 measures it.
+    mem_limit: 512m
+    cpus: 0.5
