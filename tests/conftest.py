@@ -17,7 +17,7 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from corpus_scoring import DEV_CORPUS, HOLDOUT_CORPUS, format_score, load_corpus, score_corpus
+from corpus_scoring import format_score, score_corpus
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from webhook_fixtures import WEBHOOK_PATH, FakeWaha, app_settings, new_lid, signed_headers, text_event
 
 from tracker.channel.webhook import create_app
+from tracker.corpus import DEV_CORPUS, HOLDOUT_CORPUS, load_corpus
 from tracker.ledger.people import create_person
 
 ADMIN_URL_ENV = "TRACKER_TEST_ADMIN_URL"

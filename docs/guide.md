@@ -214,10 +214,11 @@ costs one reply. A wrong amount costs trust in every total after it.
 
 - `tests/test_amount.py` and `tests/test_message.py` are the specification.
   Read a test's name to learn a rule.
-- `tests/corpus/dev.jsonl` has labelled messages. `tests/test_corpus.py` checks
+- `tracker/corpus/dev.jsonl` has labelled messages. `tests/test_corpus.py` checks
   each one.
-- `tests/corpus/holdout.jsonl` is scored only as a whole, and the code is never
-  tuned on it. [parser-accuracy.md](parser-accuracy.md) explains why.
+- `tracker/corpus/holdout.jsonl` is scored only as a whole, and the code is never
+  tuned on it. [parser-accuracy.md](parser-accuracy.md) explains why. Nine
+  labelling examples from the corpus README are in both sets.
 
 ## How the ledger's checks were tested
 
@@ -241,7 +242,7 @@ costs one reply. A wrong amount costs trust in every total after it.
 | **Ambiguous** | Not safe to write. It holds a reason and the readings on offer | `amount.py` |
 | **Candidates** | The readings a person could confirm. Empty means a refusal | `Ambiguous.candidates` |
 | **Item count** | The `2` in `beli 2 kopi 50rb`: it counts things, it isn't money | `_is_item_count` |
-| **Corpus** | Messages with the right answer written beside them | `tests/corpus/` |
+| **Corpus** | Messages with the right answer written beside them | `tracker/corpus/` |
 | **Dev set** | The corpus the rules are written against | `dev.jsonl` |
 | **Held-out set** | The corpus the rules never see while being written, so its score is honest | `holdout.jsonl` |
 | **Coverage** | Of the messages about money, the share the rules handle with no model | `CorpusScore.coverage` |
@@ -305,7 +306,7 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Add a person | `tracker add 628...`, with the owner's login |
 | Stop a person | `tracker suspend <id>`, then `tracker resume <id>` |
 | Add a threat or a control | A row in `docs/planning/threat-model.md`, with its proof and owning slice |
-| Add a corpus case | A line in `dev.jsonl`, following `tests/corpus/README.md`. Never edit `holdout.jsonl` to make a score better |
+| Add a corpus case | A line in `dev.jsonl`, following `tracker/corpus/README.md`. Never edit `holdout.jsonl` to make a score better |
 
 ## Known limits
 

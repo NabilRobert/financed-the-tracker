@@ -4,6 +4,8 @@
 !uv.lock
 !README.md
 !tracker/
+# The corpus is for tests and other projects, not the running app.
+tracker/corpus/*.jsonl
 !migrations/
 !alembic.ini
 **/__pycache__

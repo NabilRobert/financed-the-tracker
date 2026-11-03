@@ -54,6 +54,12 @@ not by a person.
   a true error rate of up to about 5% (rule of three, 95% confidence).
 - **A leak, small and disclosed.** The agent's hand-back quoted a few held-out
   messages before the measurement. No rule was changed because of them.
+- **Nine messages are in both sets** (found 2026-11-03). The held-out writer
+  reused the examples in the labelling README, and the dev set has them too,
+  so the rules saw them. Without them, the held-out set scores 0 wrong amounts,
+  0 false writes, coverage 96.2% (75 of 78) and straight writes 92.1% (58 of
+  63). The headline figures move by less than half a point, so they stand with
+  this note. A test keeps the labels on both copies identical.
 - **The order changed.** The plan measures after `parse_amount`. It was measured
   once at the very end instead, which is stricter: nothing changed afterwards.
 
