@@ -12,7 +12,7 @@ from tracker.ledger.summaries import Summary
 from tracker.parsing.amount import AmbiguityReason
 from tracker.parsing.message import Direction
 
-CONSENT_NOTICE_VERSION: Final = "20261104"
+CONSENT_NOTICE_VERSION: Final = "20261105"
 CONSENT_NOTICE: Final = """Halo! Ini bot pencatat keuangan pribadi. Sebelum mulai, mohon baca dulu.
 
 Bot ini memakai jalur tidak resmi. WhatsApp tidak mengizinkannya, jadi nomor bot bisa diblokir kapan saja tanpa pemberitahuan. Kalau itu terjadi, catatanmu tetap aman di server, dan Arthur bisa mengirimkannya kepadamu.
@@ -26,7 +26,7 @@ Siapa yang bisa melihat:
 
 Jangan kirim nomor kartu, rekening, atau KTP.
 
-Mau salinan catatanmu? Tulis: ekspor. Mau menghapus semuanya? Tulis: hapus data saya.
+Mau salinan catatanmu? Tulis: ekspor. Mau menghapus semuanya? Tulis: hapus data saya. Cadangan terenkripsi disimpan paling lama 14 hari, jadi data yang dihapus hilang sepenuhnya dari cadangan setelah itu.
 
 Ini bukan layanan keuangan. Bot hanya mencatat apa yang kamu tulis.
 
