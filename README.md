@@ -60,7 +60,10 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tracker/channel/settings.py` | Settings that refuse to start unsafely |
 | `tracker/cli.py` | Arthur's commands: add, suspend, resume, export, delete and purge |
 | `tracker/serve.py` | Runs the server |
-| `ops/waha/` | WAHA's pinned, loopback-only setup |
+| `ops/compose.yaml`, `Dockerfile` | The two containers, with nothing public |
+| `ops/backup/` | The nightly encrypted backup |
+| `ops/waha/` | WAHA's session config |
+| `docs/runbook-deploy.md` | Deploying, and checking the gate on the server |
 | `tracker/ledger/scope.py` | `person_transaction`: the one way in, limited to one person |
 | `tracker/ledger/entries.py` | `write_entry` and `void_entry` |
 | `tracker/ledger/categories.py` | Choosing a category, and the words a person teaches it |

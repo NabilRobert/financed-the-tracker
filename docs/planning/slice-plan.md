@@ -8,7 +8,7 @@
 | P2 | The GitHub repo exists | Pushing anything | Arthur |
 | P3 | A spare SIM on a phone, never Arthur's personal number, for a local WAHA test | Spike 2, the live check | Arthur |
 | P4 | Juku is deployed and the server is ready for this data, with encrypted backups verified | Slice 5 | Arthur |
-| P5 | A subdomain for the webhook | Slice 5 | Arthur |
+| P5 | ~~A subdomain for the webhook~~ Not needed: with WAHA nothing is public | — | — |
 | P6 | A decision on WhatsApp's terms (Phase 5, open questions) | Slice 5, real data | Arthur |
 | P7 | A dedicated SIM for the bot, which can be the spare one | Slice 5 | Arthur |
 | P8 | Sumopod's data terms read, and a top-up separate from Juku's $5 | Slice 7 | Arthur |
@@ -19,7 +19,10 @@
 |---|---|---|---|---|
 | 1 | How does pywa behave at the edges? | Done in slice 3; pywa has since gone | Recorded in ADR-004 | Done |
 | 2 | What does WAHA really send? | On the spare number, with invented messages: read each event's shape, and how often a LID comes | [The live check](#the-live-check) passes | 1 h |
-| 3 | Does it fit? | Idle and busy memory of the app and WAHA, in capped containers | Under 256 MB and 512 MB, or the caps are revised | 30 min |
+| 3 | Does it fit? | Idle and busy memory of the app and WAHA, in capped containers, on the server | Under 256 MB and 512 MB, or the caps are revised | 30 min |
+
+Spike 3 can't run on this Mac: the pinned WAHA image is amd64-only, and emulated memory
+figures mean nothing.
 
 Spikes 4 and 5 asked about Meta's local storage and template categories, and no longer apply.
 
@@ -35,7 +38,7 @@ mutation-checked once. Each slice updates `docs/guide.md`.
 | **2. Ledger** | Schema and migrations; row-level security; write, void, categories, keywords; summaries and budgets in SQL; a test that no money is held in a float | Fixture summaries match to the rupiah; the isolation suite passes, mutation-checked | $0 |
 | **3. WhatsApp channel** | WAHA adapter behind one interface; signature check; message-id idempotency; allow-list; consent; typed answers; commands; `bantuan`; `tracker export` | Signed fixtures cover every path; replays add nothing; a forged request is refused; one live round trip on the spare number | $0 |
 | **4. Privacy and operations** | `hapus data saya`; `ekspor`; card-number refusal; the reply limit; the purge job; send retries (R3); message outcomes; spans; `/healthz` with `version`; no-content tests for spans | Deletion leaves zero rows; no message text in logs or spans | $0 |
-| **5. Deploy, gate, then dogfood** | Containers for the app and WAHA; Caddy; backups included; probes through the systems-monitoring session; [the gate](#the-real-data-gate); then Arthur alone for 2 weeks | Alerts fired on purpose and received; a restart loses nothing; the gate passes; misses are counted and turned into corpus cases | SIM only |
+| **5. Deploy, gate, then dogfood** | Containers for the app and WAHA, with nothing public; backups included; probes through the systems-monitoring session; [the gate](#the-real-data-gate); then Arthur alone for 2 weeks | Alerts fired on purpose and received; a restart loses nothing; the gate passes; misses are counted and turned into corpus cases | SIM only |
 | **6. Invite and monthly summary** | The summary with the first reply of the month; up to 4 invitations, sent by Arthur | The summary can't send twice; deletion checked with a real invited person's agreement | SIM only |
 | **7. Model fallback (Should)** | The typed proposal; validation; the Inspect task | Zero invented amounts in the eval; Arthur's OK for each paid run | About $0.10, not budgeted yet |
 | **8. Evidence and write-up** | Results from records; JOURNEY; portfolio entry (with the portfolio session) | Every number traces to a file; a privacy check passes | $0 |
@@ -89,7 +92,7 @@ time.
 | 1 | Webhook signatures fail closed, including a missing secret | Tests, and a forged request against the deployed app | Tested; deployed run in slice 5 |
 | 2 | Row-level security holds on the deployed database | The isolation suite passes, and is mutation-checked | Passes in CI; deployed run in slice 5 |
 | 3 | No message text, names, numbers or amounts in logs, spans or alerts, including WAHA's own logs | No-content tests, and a sentinel message searched for on the server | Logs tested; the rest in slices 4 and 5 |
-| 4 | Backups are encrypted, and a restore works | A timed restore into an empty database | Planned, slice 5 |
+| 4 | Backups are encrypted, and a restore works | A timed restore into an empty database ([runbook](../runbook-deploy.md)) | Script tested; drill on the server |
 | 5 | Retention and `hapus data saya` work, and deletion survives a restore | Tests, and one real run with invented data | Tested; restore in slice 5 |
 | 6 | Rate limits work, and only replies are sent | Tests | Tested |
 | 7 | Secret scan and dependency audit pass | CI, green on the deployed commit | In CI since this branch |
@@ -100,10 +103,10 @@ time.
 | 12 | The server is ready for this data (P4) | Confirmed by the server work | Open |
 | 13 | **WhatsApp's terms are decided (P6):** the question section 4.2 asked, under WhatsApp's own terms | Arthur's written decision | Open |
 | 14 | The threat model is current | Every row is Done, or is listed under "What we accept" | Open |
-| 15 | WAHA's API and dashboard are never public | A probe from outside finds nothing; dashboard and Swagger off | Configured; probe in slice 5 |
+| 15 | WAHA's API and dashboard are never public | A probe from outside finds nothing; dashboard and Swagger off | Checked locally; probe on the server |
 | 16 | WAHA runs with a strong API key | Checked on the running container | Planned, slice 5 |
 | 17 | The session files are owner-only, and absent from backups | A permissions check, and a search of a backup | Planned, slice 5 |
-| 18 | WAHA's image is pinned by digest | Test | Tested |
+| 18 | WAHA's and the app's images are pinned by digest | Tests | Tested |
 | 19 | **A dedicated SIM, never Arthur's personal number** | Arthur's written confirmation | Open |
 | 20 | No bulk or unsolicited messaging | The send path's test, and no broadcast in the code | Tested |
 | 21 | The ledger works without WhatsApp | With WAHA stopped: a restore, then `tracker export` | Export tested; restore in slice 5 |
