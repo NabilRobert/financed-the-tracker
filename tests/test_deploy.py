@@ -71,11 +71,18 @@ def test_the_app_never_gets_the_owners_login() -> None:
     assert ".env.owner" not in app
 
 
+def _published_ports() -> list[str]:
+    """Every entry under any `ports:` key, however it's written."""
+    entries: list[str] = []
+    for block in re.findall(r"\n    ports:\n((?:      - .*\n)+)", COMPOSE):
+        entries.extend(line.strip().removeprefix("- ").strip('"') for line in block.splitlines())
+    return entries
+
+
 def test_only_loopback_ports_are_published() -> None:
-    published = re.findall(r'^\s+- "([^"]+)"$', COMPOSE, re.MULTILINE)
-    port_mappings = [entry for entry in published if re.fullmatch(r"[0-9.]+:\d+:\d+", entry)]
-    assert port_mappings
-    assert all(mapping.startswith("127.0.0.1:") for mapping in port_mappings)
+    ports = _published_ports()
+    assert len(ports) == 2
+    assert all(entry.startswith("127.0.0.1:") for entry in ports)
 
 
 def test_the_app_container_is_locked_down() -> None:
@@ -211,6 +218,12 @@ async def test_the_export_keeps_ids_a_restore_has_forgotten(owner_engine: AsyncE
     assert stat.S_IMODE(deleted_list.stat().st_mode) == 0o600
 
 
+def test_blank_lines_in_the_list_are_ignored(tmp_path: Path) -> None:
+    deleted_list = tmp_path / "deleted-ids.txt"
+    deleted_list.write_text("5\n\n  \n7\n", encoding="utf-8")
+    assert read_deleted_ids(deleted_list) == {5, 7}
+
+
 def test_a_missing_list_means_nothing_to_reapply(tmp_path: Path) -> None:
     assert read_deleted_ids(tmp_path / "none.txt") == set()
 
@@ -232,6 +245,15 @@ def test_the_cli_exports_and_reapplies(database_name: str, monkeypatch: pytest.M
     result = runner.invoke(cli_app, ["deletions-reapply", str(deleted_list)])
     assert result.exit_code == 1
     assert "isn't a person id" in result.stderr
+
+
+async def test_each_message_logs_a_content_free_heartbeat(
+    bot: Bot, member: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The dead-man alert watches for this line, so it must name the outcome and nothing else."""
+    with caplog.at_level("INFO", logger="tracker.channel"):
+        await bot.say(member, "makan 25rb")
+    assert "message_handled outcome=entry" in caplog.text
 
 
 def test_the_runbook_names_every_server_check() -> None:
