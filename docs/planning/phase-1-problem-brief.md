@@ -87,7 +87,8 @@ The idea is common, so the idea isn't what's being shown. What is:
 
 1. **Users:** Arthur plus a few invited people.
 2. **v1 scope:** text logging with undo; categories; summaries on request;
-   budgets with a monthly push.
+   budgets with a monthly summary. Since 2026-11-03 it goes with each person's first
+   reply of the month, not as a push (ADR-022).
 3. **Framework:** WAHA (ADR-022, replacing `pywa` on Meta's Cloud API), with FastAPI,
    PydanticAI for the fallback, and Postgres with SQLAlchemy 2 and Alembic.
 4. **Security comes first (2026-11-02):** this is people's financial data, so
