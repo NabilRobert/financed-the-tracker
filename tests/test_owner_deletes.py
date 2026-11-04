@@ -96,6 +96,7 @@ async def test_the_cli_fails_on_a_hold_so_the_heartbeat_alerts(
     owner_engine: AsyncEngine, app_engine: AsyncEngine, database_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(OWNER_URL_ENV, database_url("tracker_owner", database_name))
+    await quiet_the_deletion_window(owner_engine)
     people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_DAY + 1)
     try:
         # A thread, because the CLI runs its own event loop.

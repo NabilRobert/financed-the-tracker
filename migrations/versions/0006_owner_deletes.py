@@ -22,7 +22,8 @@ def upgrade() -> None:
     op.execute("GRANT UPDATE (deletion_confirmed_at) ON person TO tracker_app")
     op.execute("REVOKE EXECUTE ON FUNCTION tracker_delete_person_in_scope() FROM tracker_app")
     # Otherwise the app could quietly undo a real `hapus semua`, or clear its own forged
-    # confirmations to stay under the cap. Only the owner cancels (`tracker deletion-cancel`).
+    # confirmations to stay under the cap. Only the table's owner cancels
+    # (`tracker deletion-cancel`), whatever the other logins are called.
     op.execute("""
         CREATE FUNCTION tracker_keep_deletion_confirmed() RETURNS trigger
             LANGUAGE plpgsql
@@ -31,7 +32,7 @@ def upgrade() -> None:
             BEGIN
                 IF OLD.deletion_confirmed_at IS NOT NULL
                    AND NEW.deletion_confirmed_at IS DISTINCT FROM OLD.deletion_confirmed_at
-                   AND current_user = 'tracker_app' THEN
+                   AND current_user <> (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = TG_RELID) THEN
                     RAISE EXCEPTION 'a confirmed deletion can only be cancelled by the owner';
                 END IF;
                 RETURN NEW;
