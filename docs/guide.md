@@ -55,7 +55,11 @@ newest question, and a new entry closes any open one. `batal` with no question o
 only the newest entry, so repeating it can't reach an older one.
 
 **A message that looks like a card, account or ID number** stops at
-`tracker/parsing/sensitive.py: looks_sensitive`, before anything can store it.
+`tracker/parsing/sensitive.py: looks_sensitive`, before anything can store it. It reads
+the digits however they're grouped (dots, dashes, slashes, spaces, or digits from another
+script) but leaves out amounts like `1.500.000`, which never start with a zero. A number
+right after `pin` or `cvv` counts at any length from three digits. As a second line,
+`hide_long_numbers` turns any number of 8 or more digits in a description into `#`.
 
 **Leaving** is in `tracker/channel/leaving.py`. `ekspor` sends a CSV of the person's own
 records. `hapus data saya` asks first, and `hapus semua` within ten minutes runs
