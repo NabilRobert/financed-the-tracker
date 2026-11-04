@@ -89,7 +89,9 @@ flowchart TD
    such as `rekap` return `None`.
 3. **Find the numbers.** `amount.py: find_amounts` runs `_AMOUNT_PATTERN` over
    the text. For each piece that looks like an amount, `_read_match` works out
-   its value. `25rb` becomes the number `25` and the unit `rb`.
+   its value. `25rb` becomes the number `25` and the unit `rb`. A run of number
+   words such as `lima puluh ribu` goes to `tracker/parsing/spelled.py:
+   spelled_number_readings` instead, which reads it word by word.
 4. **Read the number exactly.** `amount.py: _number_readings` decides what the
    dots and commas mean, and returns a `Decimal`, never a `float`. If a number
    has two honest readings it returns both; if it fits no form, none.
@@ -239,6 +241,8 @@ costs one reply. A wrong amount costs trust in every total after it.
 | **Unit** | `rb`, `ribu`, `k`, `jt`, `juta`, `miliar`: they multiply the number | `UNIT_MULTIPLIERS` |
 | **Remainder** | The `500` in `2jt500`. Only three digits are sure | `_read_remainder` |
 | **Slang amount** | A word that means a sum: `goceng` is Rp5,000 | `SPELLED_AMOUNTS` |
+| **Spelled amount** | Number words with a scale word: `lima puluh ribu` is Rp50,000 | `spelled.py` |
+| **Scale word** | `ribu`, `juta` or `miliar` (or `rb`, `jt`). Without one, number words aren't read as money | `SCALE_WORDS` |
 | **Ambiguous** | Not safe to write. It holds a reason and the readings on offer | `amount.py` |
 | **Candidates** | The readings a person could confirm. Empty means a refusal | `Ambiguous.candidates` |
 | **Item count** | The `2` in `beli 2 kopi 50rb`: it counts things, it isn't money | `_is_item_count` |
@@ -285,6 +289,7 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Add a command the parser must leave alone | `COMMAND_WORDS` in `keywords.py` |
 | Add a slang amount | `SPELLED_AMOUNTS` in `amount.py`, or `AMBIGUOUS_SPELLED_AMOUNTS` if speakers disagree |
 | Add a unit | `UNIT_MULTIPLIERS` in `amount.py` |
+| Add a number word | `DIGIT_WORDS`, `SCALE_WORDS` or `SE_SCALE_WORDS` in `spelled.py` |
 | Change a limit | `MIN_UNITLESS_RUPIAH` or `MAX_ENTRY_RUPIAH` in `amount.py` |
 | Add a reason not to write | `NOT_A_TRANSACTION_PATTERN` in `keywords.py` |
 | Change the schema | A new file in `migrations/versions/`. Never edit a migration that has run |
@@ -312,8 +317,12 @@ costs one reply. A wrong amount costs trust in every total after it.
 
 - **Several lines (P5) and dates (P6) aren't built.** Those are Should items.
   Two lines with amounts ask, and "kemarin makan 25rb" is read without its date.
-- **Spelled-out numbers aren't read.** "lima ribu" gets `None`, not a wrong
-  number. Only `seribu`, `sejuta` and the slang words are.
+- **Spelled-out numbers need a scale word.** `lima puluh ribu` is read, but
+  `kopi dua puluh lima` gets `None`, like a bare number it could be Rp25 or
+  Rp25,000. `seperempat juta` isn't read either.
+- **Some spelled amounts ask.** `dua juta lima ratus` may drop a `ribu`, and the
+  `dua` in `lima puluh ribu dua` may count plates, so both offer two readings.
+  Hundreds after `ribu` are sure: `seribu lima ratus` is Rp1,500.
 - **`seribu rasa` alone writes Rp1,000.** A spelled amount can also be part of a
   name. With a real amount beside it, the message asks.
 - **Moving your own money counts as spending.** `nabung`, `tarik tunai` and

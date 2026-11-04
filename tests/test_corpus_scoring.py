@@ -38,8 +38,8 @@ def test_a_question_on_a_sure_message_is_needless_but_not_wrong() -> None:
 
 
 def test_money_the_rules_cannot_read_counts_against_coverage() -> None:
-    score = score_corpus([entry("makan 25rb", 25000), entry("lima ribu", 5000)])
-    assert score.missed == ["lima ribu"]
+    score = score_corpus([entry("makan 25rb", 25000), entry("seperempat juta", 250_000)])
+    assert score.missed == ["seperempat juta"]
     assert score.coverage == 0.5
 
 

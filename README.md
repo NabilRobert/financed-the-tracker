@@ -47,6 +47,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | Path | What it holds |
 |---|---|
 | `tracker/parsing/amount.py` | `parse_amount`: one amount's text to whole rupiah, or a refusal |
+| `tracker/parsing/spelled.py` | Reads number words such as `lima puluh ribu` |
 | `tracker/parsing/message.py` | `parse_message`: a whole message to an entry, a question, or nothing |
 | `tracker/parsing/keywords.py` | The word lists: categories, income words, commands |
 | `tracker/channel/webhook.py` | The HTTP route: size, signature, dispatch, and the only place that sends |
