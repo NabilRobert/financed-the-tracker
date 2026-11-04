@@ -10,7 +10,13 @@ import typer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tracker.ledger.deletions import DeletionListError, export_deleted_ids, reapply_deletions
+from tracker.ledger.deletions import (
+    DeletionListError,
+    cancel_confirmed_deletion,
+    export_deleted_ids,
+    reapply_deletions,
+    run_confirmed_deletions,
+)
 from tracker.ledger.engine import create_engine
 from tracker.ledger.export import export_person_csv
 from tracker.ledger.people import create_person, delete_person, set_suspended
@@ -84,6 +90,30 @@ def delete(
         typer.echo(f"No person {person_id}.", err=True)
         raise typer.Exit(code=1)
     typer.echo("Deleted.")
+
+
+@app.command("deletions-run")
+def deletions_run() -> None:
+    """Delete everyone who confirmed `hapus semua`. Run by export_deletions.sh every 15 minutes."""
+    result = _run_as_owner(run_confirmed_deletions)
+    if result.held:
+        held_ids = " ".join(str(person_id) for person_id in result.held)
+        typer.echo(
+            f"deletions_held count={len(result.held)} ids={held_ids}: more than a real day brings. Check each, "
+            "then `tracker delete ID --yes` or `tracker deletion-cancel ID`.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    typer.echo(f"Deleted {len(result.deleted)} people.")
+
+
+@app.command("deletion-cancel")
+def deletion_cancel(person_id: int) -> None:
+    """After a hold: let a person back in whose deletion they didn't confirm themselves."""
+    if not _run_as_owner(lambda engine: cancel_confirmed_deletion(engine, person_id)):
+        typer.echo(f"Person {person_id} has no confirmed deletion.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Person {person_id} can use the bot again.")
 
 
 @app.command("deletions-export")

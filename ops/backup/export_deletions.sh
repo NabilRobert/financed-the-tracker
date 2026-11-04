@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Every 15 minutes: copies deleted ids out of the database, then off the server (PR7, T27).
+# Every 15 minutes: carries out confirmed deletions, then copies the deleted ids out of the
+# database and off the server (M1, PR7, T27).
 #
 # A restore must not bring back anyone who left, and the likeliest reason to restore is
 # losing the server, list and all. So the list also goes to the backup bucket, under
@@ -17,7 +18,11 @@ LIST_ON_SERVER="$OPS_DIR/deletions/deleted-ids.txt"  # Mounted at /deletions in 
 start_heartbeat "$(require DELETIONS_HEALTHCHECK_URL)"
 configure_s3
 
-docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli deletions-export /deletions/deleted-ids.txt
+COMPOSE=(docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli)
+# Deletes everyone who confirmed `hapus semua` (M1). More than two waiting is a hold: it
+# deletes none and fails, so the heartbeat alerts, and nothing below runs until Arthur acts.
+"${COMPOSE[@]}" deletions-run
+"${COMPOSE[@]}" deletions-export /deletions/deleted-ids.txt
 
 # Merge with the bucket's copy before uploading, so the upload can only add ids. A server
 # rebuilt from an old backup has a short list, and the bucket may hold deletions it never

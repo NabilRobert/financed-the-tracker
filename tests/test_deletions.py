@@ -19,7 +19,13 @@ from webhook_fixtures import new_lid
 
 from tracker.cli import OWNER_URL_ENV
 from tracker.cli import app as cli_app
-from tracker.ledger.deletions import DeletionListError, export_deleted_ids, read_deleted_ids, reapply_deletions
+from tracker.ledger.deletions import (
+    DeletionListError,
+    export_deleted_ids,
+    read_deleted_ids,
+    reapply_deletions,
+    run_confirmed_deletions,
+)
 from tracker.ledger.people import create_person, delete_person
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -57,6 +63,7 @@ async def test_a_deletion_is_reapplied_after_a_restore(
         )
     await bot.say(member, "hapus data saya")
     await bot.say(member, "hapus semua")
+    await run_confirmed_deletions(owner_engine)
     deleted_list = tmp_path / "deleted-ids.txt"
     await export_deleted_ids(owner_engine, deleted_list)
 
@@ -221,7 +228,8 @@ def _run_export(tmp_path: Path, *, on_server: str, in_bucket: str | None, docker
 
 def test_the_export_uploads_the_list_then_reports_success(tmp_path: Path) -> None:
     calls, uploaded = _run_export(tmp_path, on_server="5\n7\n", in_bucket=None)
-    assert "deletions-export /deletions/deleted-ids.txt" in calls[1]
+    assert calls[1].endswith("deletions-run")
+    assert calls[2].endswith("deletions-export /deletions/deleted-ids.txt")
     assert calls[-2] == "rclone rcat :s3:example-bucket/tracker-deletions/deleted-ids.txt"
     assert calls[-1].endswith(HEALTHCHECK_URL)
     assert uploaded == "5\n7\n"
@@ -240,7 +248,7 @@ def test_nothing_is_uploaded_when_the_bucket_already_has_every_id(tmp_path: Path
     assert calls[-1].endswith(HEALTHCHECK_URL)
 
 
-def test_a_failed_export_uploads_nothing_and_reports_failure(tmp_path: Path) -> None:
+def test_a_hold_or_a_failed_run_uploads_nothing_and_reports_failure(tmp_path: Path) -> None:
     calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker="exit 1")
     assert [call.split()[0] for call in calls] == ["curl", "docker", "curl"]
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")

@@ -286,10 +286,16 @@ async def test_every_link_between_peoples_tables_carries_person_id(owner_engine:
 
 
 @pytest.mark.parametrize(
-    "function", ["tracker_resolve_sender", "tracker_count_unknown_sender", "tracker_delete_person_in_scope"]
+    ("function", "app_may_call"),
+    [
+        ("tracker_resolve_sender", True),
+        ("tracker_count_unknown_sender", True),
+        # Only the owner job deletes (M1): the app chooses whose scope it acts in.
+        ("tracker_delete_person_in_scope", False),
+    ],
 )
-async def test_each_owner_function_is_for_the_app_alone_and_cannot_be_redirected(
-    owner_engine: AsyncEngine, function: str
+async def test_each_owner_function_is_called_only_by_whom_it_should_and_cannot_be_redirected(
+    owner_engine: AsyncEngine, function: str, app_may_call: bool
 ) -> None:
     async with owner_engine.connect() as connection:
         row = (
@@ -304,7 +310,7 @@ async def test_each_owner_function_is_for_the_app_alone_and_cannot_be_redirected
             )
         ).one()
     assert row.proconfig == ["search_path=pg_catalog, public"]
-    assert (row.prosecdef, row.app_may_call, row.public_may_call) == (True, True, False)
+    assert (row.prosecdef, row.app_may_call, row.public_may_call) == (True, app_may_call, False)
 
 
 async def test_the_app_can_only_touch_its_own_consent_on_the_person_table(

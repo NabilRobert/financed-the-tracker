@@ -230,6 +230,8 @@ def test_the_runbook_names_every_server_check() -> None:
         "deletions-export",
         "backup_tracker.sh",
         "export_deletions.sh",
+        "deletions-run",
+        "tracker deletion-cancel <id>",
         "install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions",
         "Leave the bucket's versioning off",
         "rclone lsf --s3-versions :s3:<bucket>/tracker",

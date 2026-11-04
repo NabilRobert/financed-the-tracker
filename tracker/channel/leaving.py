@@ -2,7 +2,8 @@
 
 Deleting takes two messages, and the second only counts within ten minutes, because a
 borrowed phone is enough to send one (T11). After it, the person simply stops existing
-here: a repeat of the message finds a stranger.
+here: a repeat of the message finds a stranger. The app only records the confirmation;
+the owner job deletes them within 15 minutes, because the app login can't delete (M1).
 """
 
 from typing import Final
@@ -10,7 +11,7 @@ from typing import Final
 from tracker.channel import replies
 from tracker.channel.gateway import Attachment
 from tracker.ledger.export import write_person_csv
-from tracker.ledger.people import delete_person_in_scope, has_open_deletion_request, request_deletion
+from tracker.ledger.people import confirm_deletion, has_open_deletion_request, request_deletion
 from tracker.ledger.scope import PersonScope
 
 EXPORT_WORD: Final = "ekspor"
@@ -27,7 +28,7 @@ async def _export(scope: PersonScope) -> Attachment:
 async def _confirm_deletion(scope: PersonScope) -> str:
     if not await has_open_deletion_request(scope):
         return replies.DELETE_HOW
-    await delete_person_in_scope(scope)
+    await confirm_deletion(scope)
     return replies.DELETED
 
 

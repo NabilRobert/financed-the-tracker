@@ -67,10 +67,14 @@ line, `hide_long_numbers` turns any number of 8 or more digits in a description 
 and if 8 or more digits are left however they're split, every number goes.
 
 **Leaving** is in `tracker/channel/leaving.py`. `ekspor` sends a CSV of the person's own
-records. `hapus data saya` asks first, and `hapus semua` within ten minutes runs
-`tracker_delete_person_in_scope`, a database function that can only reach the person in
-scope. Only their id stays, in `deleted_person`, so a deletion can be re-applied after a
-restore.
+records. `hapus data saya` asks first, and `hapus semua` within ten minutes marks the
+person's deletion as confirmed (`people.py: confirm_deletion`), which makes them a stranger
+at once. The app login can't delete: every 15 minutes, `export_deletions.sh` runs
+`tracker deletions-run` under the owner login, which calls `tracker_delete_person_in_scope`
+for each confirmed person (`deletions.py: run_confirmed_deletions`). More than two waiting
+looks like a taken-over app confirming for others, so it deletes none, fails, and the
+heartbeat alerts Arthur. Only their id stays, in `deleted_person`, so a deletion can be
+re-applied after a restore.
 
 **Everything WhatsApp-specific is behind `tracker/channel/gateway.py`.** To replace WAHA,
 write one more class with those four methods. Nothing else changes.
@@ -320,6 +324,8 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Change a rate limit or the reply limit | `channel/ratelimit.py` |
 | Change what's kept, and for how long | `ledger/retention.py`, and PR6 in Phase 2 |
 | Delete someone without WhatsApp | `tracker delete <id> --yes`, with the owner's login |
+| Clear a deletion hold | Check each id `deletions-run` printed, then `tracker delete <id> --yes` or `tracker deletion-cancel <id>` |
+| Change how many deletions one run may make | `MAX_DELETIONS_PER_RUN` in `ledger/deletions.py`, and ADR-023 |
 | Check the deployed version | `GET /healthz` gives `status` and `version` |
 | Add a person | `tracker add 628...`, with the owner's login |
 | Stop a person | `tracker suspend <id>`, then `tracker resume <id>` |

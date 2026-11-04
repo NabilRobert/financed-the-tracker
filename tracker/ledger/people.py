@@ -126,8 +126,16 @@ async def has_open_deletion_request(scope: PersonScope) -> bool:
     return bool(is_open)
 
 
+async def confirm_deletion(scope: PersonScope) -> None:
+    """Records `hapus semua`. The person is a stranger from now on; the owner job deletes them (M1)."""
+    await scope.connection.execute(
+        text("UPDATE person SET deletion_confirmed_at = now() WHERE id = :person_id"),
+        {"person_id": scope.person_id},
+    )
+
+
 async def delete_person_in_scope(scope: PersonScope) -> None:
-    """Deletes everything about the person in scope (I6). The function can reach no one else."""
+    """Deletes everything about the person in scope (I6). Only the owner login may call it."""
     await scope.connection.execute(text("SELECT tracker_delete_person_in_scope()"))
 
 
