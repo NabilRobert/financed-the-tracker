@@ -110,11 +110,19 @@ backup and the server itself, so:
   every 15 minutes, so a failing copy alerts.
 
 The same script first runs `deletions-run`, which deletes everyone who confirmed
-`hapus semua` (ADR-023). If more than two are waiting, it deletes none and the heartbeat
-alerts: a **deletion hold**. Run `deletions-run` by hand to see the ids, ask each person
-or check how they came to confirm, then `tracker delete <id> --yes` for real requests and
-`tracker deletion-cancel <id>` for the rest. Nothing else in the script runs until the
-hold is cleared.
+`hapus semua` (ADR-023). If that would make more than two deletions in 24 hours, it deletes
+none, and the script still exports and uploads, then fails so the heartbeat alerts: a
+**deletion hold**. Run `deletions-run` by hand to see the ids, ask each person or check how
+they came to confirm, then `tracker delete <id> --yes` for real requests and
+`tracker deletion-cancel <id>` for the rest. The day counts a reapply too, so expect a
+hold in the day after a restore.
+
+**If a deletion turns out to be forged,** the id is in three places that each bring it
+back. With the export cron line paused, take it out of all three, then restore that person
+from a backup:
+1. `DELETE FROM deleted_person WHERE person_id = <id>`, as the owner;
+2. the line in `ops/deletions/deleted-ids.txt`;
+3. the line in the bucket's `tracker-deletions/deleted-ids.txt` (versioning keeps the old copy).
 
 The drill, timed, with WAHA stopped (`docker compose stop waha`):
 

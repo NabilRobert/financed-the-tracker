@@ -700,7 +700,7 @@ database, no model, $0. See the [slice plan](slice-plan.md).
 [ChatMaxima on Indonesian VAT](https://chatmaxima.com/whatsapp-api-pricing/indonesia/) ·
 [Firefly III comparison](https://beancount.io/blog/2026/07/26/firefly-iii-vs-actual-budget-self-hosted-open-source-budgeting-guide)
 
-## ADR-023: Only an owner job deletes, two people a run at most
+## ADR-023: Only an owner job deletes, two people a day at most
 
 **Decision (settled by Arthur, 2026-11-04):** "1 on project 9", the first of the two
 options below.
@@ -715,12 +715,21 @@ can do.
 
 | Option | Verdict |
 |---|---|
-| **The app records the confirmation; an owner job deletes, at most two a run** | **Chosen.** The app login loses the delete function. A confirmed person is a stranger at once, and `tracker deletions-run`, in the 15-minute `export_deletions.sh`, deletes them. More than two waiting deletes none and fails, so the heartbeat alerts, and Arthur checks each with `tracker delete` or `tracker deletion-cancel` |
+| **The app records the confirmation; an owner job deletes, at most two a day** | **Chosen.** The app login loses the delete function, and a trigger stops it undoing a confirmation. A confirmed person is a stranger at once, and `tracker deletions-run`, in the 15-minute `export_deletions.sh`, deletes them. If that would make more than two deletions in 24 hours, it deletes none and fails, so the heartbeat alerts, and Arthur checks each with `tracker delete` or `tracker deletion-cancel` |
 | Keep the app's delete, and say so plainly in the threat model | Rejected: a taken-over app could wipe every ledger at once, limited only by the backups |
 | Refuse deletion over WhatsApp, and delete only on request to Arthur | Rejected: the consent notice promises `hapus data saya` |
 
 **The cost.** A deletion now takes up to 15 minutes, and longer during a hold; the reply says
 "dihapus dalam 15 menit". The person is locked out from the moment they confirm, so nothing
 more is stored about them. The cap of two is a guess at what a real day brings, in
-`MAX_DELETIONS_PER_RUN`; the dogfood slice can change it.
+`MAX_DELETIONS_PER_DAY`; the dogfood slice can change it.
+
+**Per day, not per run (from the review's re-check).** A first version capped each run, so a
+taken-over app could confirm two people every 15 minutes and never trip it. The day counts
+every deletion in `deleted_person`, including `tracker delete` and a reapply, so a restore
+is followed by a day of holds, which Arthur clears by hand.
+
+**What a forged deletion costs.** Up to two people a day, until Arthur notices. Their ids
+reach the deletion lists, so a restore alone doesn't bring them back: the runbook says how
+to take a forged id out of the database and both lists before restoring that person.
 
