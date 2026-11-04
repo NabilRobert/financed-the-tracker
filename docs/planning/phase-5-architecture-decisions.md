@@ -699,3 +699,28 @@ database, no model, $0. See the [slice plan](slice-plan.md).
 [Infobip on local storage](https://www.infobip.com/docs/whatsapp/compliance/data-privacy) ·
 [ChatMaxima on Indonesian VAT](https://chatmaxima.com/whatsapp-api-pricing/indonesia/) ·
 [Firefly III comparison](https://beancount.io/blog/2026/07/26/firefly-iii-vs-actual-budget-self-hosted-open-source-budgeting-guide)
+
+## ADR-023: Only an owner job deletes, two people a run at most
+
+**Decision (settled by Arthur, 2026-11-04):** "1 on project 9", the first of the two
+options below.
+
+**Why it came up.** The independent review (M1) found that `tracker_delete_person_in_scope`
+trusted the scope the app login sets, and the app can set any scope. So a taken-over app
+could delete anyone's ledger, while T20 said it could delete nothing.
+
+**What can't be fixed.** The app is the only part that knows who sent a message, so it can
+always claim that someone confirmed `hapus semua`. Any design only limits what such a claim
+can do.
+
+| Option | Verdict |
+|---|---|
+| **The app records the confirmation; an owner job deletes, at most two a run** | **Chosen.** The app login loses the delete function. A confirmed person is a stranger at once, and `tracker deletions-run`, in the 15-minute `export_deletions.sh`, deletes them. More than two waiting deletes none and fails, so the heartbeat alerts, and Arthur checks each with `tracker delete` or `tracker deletion-cancel` |
+| Keep the app's delete, and say so plainly in the threat model | Rejected: a taken-over app could wipe every ledger at once, limited only by the backups |
+| Refuse deletion over WhatsApp, and delete only on request to Arthur | Rejected: the consent notice promises `hapus data saya` |
+
+**The cost.** A deletion now takes up to 15 minutes, and longer during a hold; the reply says
+"dihapus dalam 15 menit". The person is locked out from the moment they confirm, so nothing
+more is stored about them. The cap of two is a guess at what a real day brings, in
+`MAX_DELETIONS_PER_RUN`; the dogfood slice can change it.
+

@@ -48,7 +48,7 @@ SENSITIVE_NUMBER: Final = (
 )
 DELETE_CONFIRM: Final = "Ini akan menghapus semua catatanmu dan tidak bisa dikembalikan. Yakin? Balas: hapus semua"
 DELETE_HOW: Final = "Untuk menghapus semua catatanmu, tulis: hapus data saya"
-DELETED: Final = "Semua datamu sudah dihapus. Terima kasih sudah memakai bot ini."
+DELETED: Final = "Baik. Semua datamu akan dihapus dalam 15 menit. Terima kasih sudah memakai bot ini."
 EXPORT_CAPTION: Final = "Ini semua catatanmu."
 EXPORT_FILENAME: Final = "catatan-keuangan.csv"
 RATE_LIMITED: Final = "Pesanmu terlalu banyak. Coba lagi nanti ya."

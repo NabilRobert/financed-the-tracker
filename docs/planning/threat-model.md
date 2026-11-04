@@ -85,7 +85,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | T13 | A card or account number gets stored | Detected and refused before any write, including a pending entry (PR3) | `test_a_card_number_is_refused_before_anything_stores_it`, `test_a_card_number_cannot_reach_a_question_either` | 4 | Done |
 | T14 | Message text, names, numbers or amounts reach logs, spans or alerts | No content by rule (PR2). The database engine runs with `hide_parameters`. Failure paths log an error type only. FastAPI's own telemetry is off, because it records query strings and exception messages. A span's exception adds its type, never its text | `test_no_path_logs_message_text_numbers_or_ids`, `test_spans_cover_the_path_and_hold_no_content`, `test_no_library_adds_spans_of_its_own`. Alert rules are checked in slice 5 | 3, 4, 5 | Part done |
 | T15 | Data is kept forever | The retention table (PR6) and a purge job | `test_the_purge_removes_expired_questions_and_old_bare_message_ids`, `test_a_purged_entrys_message_id_is_never_removed` | 4 | Done |
-| T16 | A person leaves and their data stays | `hapus data saya` removes every row, through one function that can only reach the person in scope. The app login can't delete anything else. `tracker delete` does the same if the channel is gone | `test_hapus_data_saya_leaves_zero_rows_for_that_person_alone`, which finds the tables from the catalog | 4 | Done |
+| T16 | A person leaves and their data stays | `hapus semua` locks the person out at once, and the owner job removes every row within 15 minutes, through one function that only the owner login may call (ADR-023). `tracker delete` does the same if the channel is gone | `test_hapus_data_saya_leaves_zero_rows_for_that_person_alone`, which finds the tables from the catalog, `test_hapus_semua_locks_the_person_out_and_says_when_it_happens` | 4 | Done |
 | T17 | Data is stored before consent | Nothing is written before **setuju**, and only for a notice this person was sent, with the time and version recorded (I4, I7) | `test_a_person_who_has_not_agreed_gets_the_notice_and_nothing_is_stored`, `test_setuju_agrees_only_to_a_notice_the_person_was_sent` | 3 | Done |
 
 ### WhatsApp
@@ -102,7 +102,7 @@ people's financial records on this channel? It stays open, and still gates real 
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says` | 2 | Done |
+| T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says. It can mark a deletion as confirmed, for anyone, because it chooses whose scope it acts in (found by the independent review). So only the owner job deletes, at most two people a run; more waiting is held for Arthur, and the heartbeat alerts (ADR-023) | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says`, `test_the_app_login_cannot_run_the_delete_function`, `test_more_confirmed_than_the_cap_are_all_held` | 2 | Done |
 | T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: user 10001, a read-only root, no capabilities and a 256 MB cap, with no owner login in its environment; little data kept, and the number dropped once a LID is known. The rest is accepted | `test_the_app_never_gets_the_owners_login`, `test_the_app_container_is_locked_down`, and the image run as user 10001 with a read-only root. `docker inspect` on the server | 3, 5 | Part done |
 | T22 | Postgres is reachable from outside, or a login is stolen | Not published to the internet. One login per job, with the least grants (ADR-009) | Least grants are tested. An outside probe in slice 5 | 2, 5 | Part done |
 | T23 | The webhook secret or WAHA's API key is stolen | Least reach: WAHA is never public. `.env` readable only by the app, and written rotation steps | Rotation rehearsed once before the gate | 5 | Planned |
@@ -160,6 +160,9 @@ Each of these is stated plainly in the consent notice or here:
   operator, so the notice says so.
 - **If the running app is taken over, entries can be read.** Encrypting fields
   wouldn't help, because the key would sit on the same server.
+- **A taken-over app can lock people out, and get up to two deleted every 15 minutes,**
+  by confirming deletions they never asked for. More is held for Arthur (ADR-023). The
+  backups are the limit on what can be lost. Chosen by Arthur on 2026-11-04.
 - **A person's phone is the only login.** Whoever holds it unlocked has their
   ledger.
 - **Someone with WAHA's session files is the bot's account** until it's unlinked.

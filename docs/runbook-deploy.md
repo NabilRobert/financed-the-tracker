@@ -107,6 +107,13 @@ backup and the server itself, so:
 - the settings file needs `DELETIONS_HEALTHCHECK_URL`, a second heartbeat check that runs
   every 15 minutes, so a failing copy alerts.
 
+The same script first runs `deletions-run`, which deletes everyone who confirmed
+`hapus semua` (ADR-023). If more than two are waiting, it deletes none and the heartbeat
+alerts: a **deletion hold**. Run `deletions-run` by hand to see the ids, ask each person
+or check how they came to confirm, then `tracker delete <id> --yes` for real requests and
+`tracker deletion-cancel <id>` for the rest. Nothing else in the script runs until the
+hold is cleared.
+
 The drill, timed, with WAHA stopped (`docker compose stop waha`):
 
 1. Copy the newest `tracker-*.dump.age` from S3 to a machine that holds the age private

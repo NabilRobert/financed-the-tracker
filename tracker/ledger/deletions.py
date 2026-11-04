@@ -11,6 +11,7 @@ A deletion made after the last copy and before a restore is the one gap: copy of
 """
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -105,3 +106,41 @@ async def reapply_deletions(owner_engine: AsyncEngine, path: Path, *, is_empty_o
             reapplied += 1
     await _keep_ids_retired(owner_engine, ids)
     return reapplied
+
+
+# Real people rarely leave together. More confirmed at once looks like a taken-over app
+# confirming for others, so the job deletes none of them and Arthur checks (M1, ADR-023).
+MAX_DELETIONS_PER_RUN: Final = 2
+
+
+@dataclass(frozen=True)
+class DeletionRun:
+    deleted: list[int]
+    held: list[int]
+
+
+async def run_confirmed_deletions(owner_engine: AsyncEngine) -> DeletionRun:
+    """Deletes everyone who confirmed `hapus semua`, unless more are waiting than the cap."""
+    async with owner_engine.connect() as connection:
+        rows = await connection.execute(
+            text("SELECT id FROM person WHERE deletion_confirmed_at IS NOT NULL ORDER BY id")
+        )
+        waiting = [int(row.id) for row in rows]
+    if len(waiting) > MAX_DELETIONS_PER_RUN:
+        return DeletionRun(deleted=[], held=waiting)
+    for person_id in waiting:
+        await delete_person(owner_engine, person_id)
+    return DeletionRun(deleted=waiting, held=[])
+
+
+async def cancel_confirmed_deletion(owner_engine: AsyncEngine, person_id: int) -> bool:
+    """Lets a held person back in, for a confirmation they didn't send. False if there was none."""
+    async with owner_engine.begin() as connection:
+        cancelled = await connection.scalar(
+            text("""
+                UPDATE person SET deletion_confirmed_at = NULL, deletion_requested_at = NULL
+                WHERE id = :id AND deletion_confirmed_at IS NOT NULL RETURNING id
+            """),
+            {"id": person_id},
+        )
+    return cancelled is not None
