@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from conftest import Bot, database_url
-from ops_scripts import HEALTHCHECK_URL, run_with_stubs
+from ops_scripts import HEALTHCHECK_URL, copy_ops_folder, run_with_stubs
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from typer.testing import CliRunner
@@ -79,7 +79,19 @@ async def test_the_export_keeps_ids_a_restore_has_forgotten(owner_engine: AsyncE
     deleted_list.write_text("999999999\n", encoding="utf-8")
     await export_deleted_ids(owner_engine, deleted_list)
     assert 999_999_999 in read_deleted_ids(deleted_list)
-    assert stat.S_IMODE(deleted_list.stat().st_mode) == 0o600
+    assert stat.S_IMODE(deleted_list.stat().st_mode) == 0o640
+
+
+async def test_the_list_stays_readable_by_the_folders_group_whatever_was_there(
+    owner_engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """The owner account copies it off the server through the folder's group (R4)."""
+    deleted_list = tmp_path / "deleted-ids.txt"
+    leftover = tmp_path / "deleted-ids.txt.partial"
+    leftover.write_text("", encoding="utf-8")
+    leftover.chmod(0o600)
+    await export_deleted_ids(owner_engine, deleted_list)
+    assert stat.S_IMODE(deleted_list.stat().st_mode) == 0o640
 
 
 def test_blank_lines_in_the_list_are_ignored(tmp_path: Path) -> None:
@@ -191,19 +203,61 @@ def test_the_deletion_list_folder_is_never_committed() -> None:
     assert "ops/deletions/" in gitignore
 
 
-def test_the_export_copies_the_list_off_the_server_then_reports_success(tmp_path: Path) -> None:
-    calls = run_with_stubs(EXPORT_SCRIPT, tmp_path, {"docker": 0, "rclone": 0, "curl": 0})
-    assert [call.split()[0] for call in calls] == ["curl", "docker", "rclone", "curl"]
+def _run_export(tmp_path: Path, *, on_server: str, in_bucket: str | None, docker: str = "") -> tuple[list[str], str]:
+    """Runs export_deletions.sh with the list on the server and in the bucket as given
+    (None: the bucket has no copy). Returns the calls and what was uploaded ("" if nothing)."""
+    ops = copy_ops_folder(tmp_path)
+    (ops / "deletions").mkdir()
+    (ops / "deletions" / "deleted-ids.txt").write_text(on_server, encoding="utf-8")
+    uploaded = tmp_path / "uploaded.txt"
+    listing = "deleted-ids.txt" if in_bucket is not None else ""
+    rclone = (
+        f'case "$1" in lsf) echo "{listing}" ;; cat) printf "{in_bucket or ""}" ;; rcat) cat > "{uploaded}" ;; esac'
+    )
+    script = ops / "backup" / "export_deletions.sh"
+    calls = run_with_stubs(script, tmp_path, {"docker": docker, "rclone": rclone, "curl": ""})
+    return calls, uploaded.read_text(encoding="utf-8") if uploaded.exists() else ""
+
+
+def test_the_export_uploads_the_list_then_reports_success(tmp_path: Path) -> None:
+    calls, uploaded = _run_export(tmp_path, on_server="5\n7\n", in_bucket=None)
     assert "deletions-export /deletions/deleted-ids.txt" in calls[1]
-    list_on_server = REPO_ROOT / "ops" / "deletions" / "deleted-ids.txt"
-    assert f"copyto --checksum {list_on_server} :s3:example-bucket/tracker-deletions/deleted-ids.txt" in calls[2]
-    assert calls[3].endswith(HEALTHCHECK_URL)
+    assert calls[-2] == "rclone rcat :s3:example-bucket/tracker-deletions/deleted-ids.txt"
+    assert calls[-1].endswith(HEALTHCHECK_URL)
+    assert uploaded == "5\n7\n"
+
+
+def test_the_upload_keeps_every_id_the_bucket_already_has(tmp_path: Path) -> None:
+    """A server rebuilt from an old backup has a short list; it must never shrink the bucket's."""
+    _, uploaded = _run_export(tmp_path, on_server="5\n7\n", in_bucket="3\n9\n5\n")
+    assert uploaded == "3\n5\n7\n9\n"
+
+
+def test_nothing_is_uploaded_when_the_bucket_already_has_every_id(tmp_path: Path) -> None:
+    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket="5\n3\n")
+    assert uploaded == ""
+    assert not any(call.startswith("rclone rcat") for call in calls)
+    assert calls[-1].endswith(HEALTHCHECK_URL)
 
 
 def test_a_failed_export_uploads_nothing_and_reports_failure(tmp_path: Path) -> None:
-    calls = run_with_stubs(EXPORT_SCRIPT, tmp_path, {"docker": 1, "rclone": 0, "curl": 0})
+    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker="exit 1")
     assert [call.split()[0] for call in calls] == ["curl", "docker", "curl"]
-    assert calls[2].endswith(f"{HEALTHCHECK_URL}/fail")
+    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
+    assert uploaded == ""
+
+
+@pytest.mark.parametrize("failing_step", ["lsf", "cat"])
+def test_an_unreadable_bucket_uploads_nothing_and_reports_failure(tmp_path: Path, failing_step: str) -> None:
+    """If the bucket's copy can't be listed or read, uploading the server's list could shrink it."""
+    ops = copy_ops_folder(tmp_path)
+    (ops / "deletions").mkdir()
+    (ops / "deletions" / "deleted-ids.txt").write_text("5\n", encoding="utf-8")
+    rclone = f'case "$1" in {failing_step}) exit 1 ;; lsf) echo deleted-ids.txt ;; esac'
+    script = ops / "backup" / "export_deletions.sh"
+    calls = run_with_stubs(script, tmp_path, {"docker": "", "rclone": rclone, "curl": ""})
+    assert not any(call.startswith("rclone rcat") for call in calls)
+    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
 
 
 def test_the_copy_off_the_server_is_out_of_reach_of_the_backup_pruning() -> None:

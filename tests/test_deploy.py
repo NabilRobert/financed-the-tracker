@@ -189,7 +189,7 @@ def test_the_backup_keeps_the_period_the_notice_states() -> None:
 
 
 def test_the_backup_uploads_prunes_then_reports_success(tmp_path: Path) -> None:
-    stubs = {"pg_dump": 0, "age": 0, "rclone": 0, "curl": 0}
+    stubs = {"pg_dump": "", "age": "", "rclone": "", "curl": ""}
     calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
     assert calls[0].endswith(f"{HEALTHCHECK_URL}/start")
     assert calls[-1].endswith(HEALTHCHECK_URL)
@@ -198,7 +198,7 @@ def test_the_backup_uploads_prunes_then_reports_success(tmp_path: Path) -> None:
 
 
 def test_a_failed_dump_reports_failure(tmp_path: Path) -> None:
-    stubs = {"pg_dump": 1, "age": 0, "rclone": 0, "curl": 0}
+    stubs = {"pg_dump": "exit 1", "age": "", "rclone": "", "curl": ""}
     calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
     assert not any(call.startswith("rclone lsf") for call in calls)
@@ -224,7 +224,7 @@ def test_the_runbook_names_every_server_check() -> None:
         "deletions-export",
         "backup_tracker.sh",
         "export_deletions.sh",
-        "install -d -m 700 -o 10001 -g 10001 <repo>/ops/deletions",
+        "install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions",
         "DELETIONS_HEALTHCHECK_URL",
         "probe",
         "sentinel",

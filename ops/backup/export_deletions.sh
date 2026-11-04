@@ -4,8 +4,9 @@
 # A restore must not bring back anyone who left, and the likeliest reason to restore is
 # losing the server, list and all. So the list also goes to the backup bucket, under
 # tracker-deletions/, which the 14-day pruning in backup_tracker.sh never reaches. It
-# holds person ids and nothing else. Run by cron as the owner account, with the same
-# TRACKER_BACKUP_ENV as the backup. A failed run pings the heartbeat's /fail, so it alerts.
+# holds person ids and nothing else. Run by cron as the owner account, which reads the list
+# through the folder's group, with the same TRACKER_BACKUP_ENV as the backup. A failed run
+# pings the heartbeat's /fail, so it alerts.
 set -euo pipefail
 umask 077
 
@@ -17,7 +18,19 @@ start_heartbeat "$(require DELETIONS_HEALTHCHECK_URL)"
 configure_s3
 
 docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli deletions-export /deletions/deleted-ids.txt
-# --checksum: upload only when the ids have changed, not on every run.
-rclone copyto --checksum "$LIST_ON_SERVER" ":s3:$S3_BUCKET/tracker-deletions/deleted-ids.txt"
+
+# Merge with the bucket's copy before uploading, so the upload can only add ids. A server
+# rebuilt from an old backup has a short list, and the bucket may hold deletions it never
+# saw. If the bucket can't be listed or read, the script stops rather than upload a list
+# that could be shorter.
+REMOTE_DIR=":s3:$S3_BUCKET/tracker-deletions"
+listing="$(rclone lsf "$REMOTE_DIR" --files-only --include deleted-ids.txt)"
+in_bucket=""
+if [ -n "$listing" ]; then in_bucket="$(rclone cat "$REMOTE_DIR/deleted-ids.txt" | sort -un)"; fi
+on_server="$(cat "$LIST_ON_SERVER")"
+merged="$(printf '%s\n%s\n' "$in_bucket" "$on_server" | sed '/^$/d' | sort -un)"
+if [ "$merged" != "$in_bucket" ]; then
+  printf '%s\n' "$merged" | rclone rcat "$REMOTE_DIR/deleted-ids.txt"
+fi
 
 ping_hc ""
