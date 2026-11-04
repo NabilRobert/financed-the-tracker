@@ -165,7 +165,10 @@ server, so nothing in it touches the live database. WAHA isn't needed.
 **After losing the server,** the restore is the real thing, into the new server's Postgres:
 - section 1 there first, including `roles.sql` and an empty `tracker` database;
 - the same stream over an SSH tunnel to its Postgres:
-  `ssh -L <port>:127.0.0.1:5432 <server>`, then step 2's `age -d … | pg_restore -h 127.0.0.1 -p <port> …`;
+  `ssh -L <port>:127.0.0.1:5432 <server>`, then step 2's `age -d … | pg_restore -h 127.0.0.1 -p <port> …`.
+  Through the tunnel `tracker_owner` logs in from `127.0.0.1`, which step 7 refuses, so add
+  `host tracker tracker_owner 127.0.0.1/32 scram-sha-256` to `pg_hba.conf` for the restore,
+  reload, and remove it straight after;
 - the bucket's list as `ops/deletions/deleted-ids.txt`, then
   `docker compose -f ops/compose.yaml --profile tools run --rm cli deletions-reapply /deletions/deleted-ids.txt`
   before the app starts or anyone is added;
