@@ -38,9 +38,12 @@ _DIGIT_RUN: Final = re.compile(
     rf"[0-9]{{3,6}}(?:(?:[ ]|{_PUNCTUATION_GAP})[0-9]{{3,6}}){{2,}}|[0-9]+(?:{_PUNCTUATION_GAP}[0-9]+)*"
 )
 _ACCOUNT_WORD: Final = re.compile(r"\b(?:rekening|rek|norek|kartu|ktp|nik|cvv|pin)\b")
-# A number in thousands groups right after one of these reads like an amount, so it
-# would sit in a question as one: "tf ke rek 123.456.789". Checked before amounts go.
-_GROUPED_NUMBER_AFTER_ACCOUNT_WORD: Final = re.compile(r"\b(?:rekening|rek|norek|kartu)\b[^0-9a-z]{0,3}([0-9][0-9.,]*)")
+# A number in thousands groups right after one of these, or after one short word such as
+# a bank's name, reads like an amount, so it would sit in a question as one:
+# "tf ke rek bca 123.456.789". Checked before amounts go, and only from 8 digits.
+_GROUPED_NUMBER_AFTER_ACCOUNT_WORD: Final = re.compile(
+    r"\b(?:rekening|rek|norek|kartu)\b(?:[^0-9a-z]+[a-z]{2,8})?[^0-9a-z]{0,3}([0-9][0-9.,]*)"
+)
 # A PIN, CVV or one-time code is short, so a number of 3 or more digits counts after the
 # word, "pinnya" too, even with up to three words between ("pin atm bca saya 0123").
 # "pinjam" isn't "pin", and a number with a unit glued on, "pin 150rb", is a price.
