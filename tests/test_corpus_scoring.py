@@ -3,8 +3,10 @@
 from pathlib import Path
 
 import pytest
-from corpus_scoring import CorpusMessage, Outcome, load_corpus, score_corpus
+from corpus_scoring import score_corpus
 from pydantic import ValidationError
+
+from tracker.corpus import CorpusMessage, Outcome, load_corpus
 
 
 def entry(text: str, amount: int, direction: str = "spending", category: str = "Makan") -> CorpusMessage:

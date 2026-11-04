@@ -4,18 +4,13 @@ Every dev message pins one behaviour. The held-out set is only ever scored as a
 whole, so nobody reads a failure there one message at a time and tunes to it.
 """
 
-import pytest
-from corpus_scoring import (
-    DEV_CORPUS,
-    HOLDOUT_CORPUS,
-    CorpusMessage,
-    CorpusScore,
-    Outcome,
-    load_corpus,
-    rules_outcome,
-    score_corpus,
-)
+from pathlib import Path
 
+import pytest
+from corpus_scoring import CorpusScore, rules_outcome, score_corpus
+
+import tracker
+from tracker.corpus import DEV_CORPUS, HOLDOUT_CORPUS, CorpusMessage, Outcome, load_corpus
 from tracker.parsing.message import ParsedEntry, parse_message
 
 MIN_COVERAGE = 0.85  # G2 in docs/planning/phase-1-problem-brief.md, confirmed in docs/parser-accuracy.md.
@@ -53,3 +48,21 @@ def test_holdout_has_no_false_writes(holdout_score: CorpusScore) -> None:
 
 def test_holdout_coverage_meets_the_goal(holdout_score: CorpusScore) -> None:
     assert holdout_score.coverage >= MIN_COVERAGE
+
+
+def test_a_message_in_both_sets_has_the_same_label_in_each() -> None:
+    """Nine labelling-rule examples from README.md are in both sets; they must agree.
+
+    A project training on the dev set must still drop these, or it sees held-out text.
+    """
+    dev_labels = {message.text: message.model_copy(update={"note": None}) for message in load_corpus(DEV_CORPUS)}
+    for message in load_corpus(HOLDOUT_CORPUS):
+        dev_label = dev_labels.get(message.text)
+        if dev_label is not None:
+            assert dev_label == message.model_copy(update={"note": None}), message.text
+
+
+def test_the_corpus_ships_inside_the_package_so_other_projects_can_import_it() -> None:
+    package_dir = Path(tracker.__file__).parent
+    assert DEV_CORPUS.is_relative_to(package_dir)
+    assert HOLDOUT_CORPUS.is_relative_to(package_dir)

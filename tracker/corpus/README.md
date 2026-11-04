@@ -6,7 +6,13 @@ None comes from a real person, and no phone or card number in it is real.
 - `dev.jsonl`: the rules are written against this set.
 - `holdout.jsonl`: the rules are never tuned on this set. See
   [parser-accuracy.md](../../docs/parser-accuracy.md) for who wrote it and how
-  it is used.
+  it is used. Nothing may be trained or tuned on it in another project either.
+
+Nine messages are in both sets: the held-out writer reused examples from this
+README. A project training on `dev.jsonl` must drop any text that is also in
+`holdout.jsonl`.
+
+`tracker.corpus.load_corpus` reads either file into `CorpusMessage` objects.
 
 ## One line, one message
 

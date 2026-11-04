@@ -1,56 +1,13 @@
-"""Loads the labelled corpus and scores the rules against it.
+"""Scores the rules against the labelled corpus in tracker/corpus/.
 
 test_corpus.py gates on these numbers, and conftest.py prints them after every
 run. What each number means is defined in docs/parser-accuracy.md.
 """
 
 from dataclasses import dataclass, field
-from enum import StrEnum
-from pathlib import Path
-from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, model_validator
-
+from tracker.corpus import CorpusMessage, Outcome
 from tracker.parsing.message import AmbiguousEntry, ParsedEntry, parse_message
-
-CORPUS_DIR = Path(__file__).parent / "corpus"
-DEV_CORPUS = CORPUS_DIR / "dev.jsonl"
-HOLDOUT_CORPUS = CORPUS_DIR / "holdout.jsonl"
-
-
-class Outcome(StrEnum):
-    ENTRY = "entry"
-    ASK = "ask"
-    UNPARSED = "unparsed"
-
-
-class CorpusMessage(BaseModel):
-    """One labelled line. The format is in tests/corpus/README.md."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    text: str
-    outcome: Outcome
-    amount: int | None = None
-    direction: Literal["spending", "income"] | None = None
-    category: str | None = None
-    note: str | None = None
-
-    @model_validator(mode="after")
-    def entry_fields_appear_only_on_entries(self) -> Self:
-        fields = (self.amount, self.direction, self.category)
-        has_all_fields = all(field is not None for field in fields)
-        has_no_fields = all(field is None for field in fields)
-        if self.outcome is Outcome.ENTRY and not has_all_fields:
-            raise ValueError(f"an entry needs amount, direction and category: {self.text!r}")
-        if self.outcome is not Outcome.ENTRY and not has_no_fields:
-            raise ValueError(f"only an entry has amount, direction and category: {self.text!r}")
-        return self
-
-
-def load_corpus(path: Path) -> list[CorpusMessage]:
-    lines = path.read_text(encoding="utf-8").splitlines()
-    return [CorpusMessage.model_validate_json(line) for line in lines if line]
 
 
 def rules_outcome(text: str) -> Outcome:

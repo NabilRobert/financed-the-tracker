@@ -76,7 +76,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `migrations/` | The schema, row-level security and grants |
 | `ops/db/roles.sql` | The database logins |
 | `tracker/parsing/sensitive.py` | Spots card, account and ID numbers |
-| `tests/corpus/` | The labelled messages and the rules for labelling them |
+| `tracker/corpus/` | The labelled messages, their loader and the rules for labelling them. In the package so other projects can import it |
 | `tests/corpus_scoring.py` | Scores the rules against a corpus |
 | `tests/test_*.py` | The specification, one behaviour per test |
 | `docs/guide.md` | A plain-English walk through the code |
