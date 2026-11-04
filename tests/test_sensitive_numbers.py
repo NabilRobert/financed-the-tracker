@@ -101,6 +101,8 @@ def test_a_number_right_after_pin_or_cvv_is_caught(message: str) -> None:
         "pinjam uang 500000",
         "tf ke rekening mandiri 1.500.000",
         "tf ke rekening ibu saya 12.500.000",
+        "bayar kartu kredit 12.500.000",
+        "tagihan kartu 12.500.000",
         "pin 25.000",
     ],
 )
@@ -136,7 +138,8 @@ def test_digits_from_another_script_are_kept_out_of_the_description() -> None:
 
 
 @pytest.mark.parametrize(
-    "message", ["tf ke rek 123.456.789", "tf ke norek: 12.345.678", "kartu 1.234.567.890", "tf ke rek bca 123.456.789"]
+    "message",
+    ["tf ke rek 123.456.789", "tf ke norek: 12.345.678", "rekening 1.234.567.890", "tf ke rek bca 123.456.789"],
 )
 def test_a_grouped_number_right_after_an_account_word_is_caught(message: str) -> None:
     """It reads like an amount, so without this it would sit in a question as one (R7)."""
