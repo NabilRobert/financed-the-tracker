@@ -7,6 +7,7 @@ in writing that this hands the ledger to whoever holds the number at that moment
 (docs/planning/threat-model.md, T12).
 """
 
+import asyncio
 import uuid
 
 from conftest import Bot
@@ -14,9 +15,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from webhook_fixtures import new_lid
 
-from tracker.ledger.people import create_person, set_suspended
+from tracker.ledger.people import create_person, resolve_sender, set_suspended
 
 PHONE_SUFFIX = "@c.us"
+MOVE_LOCK_WAIT_SECONDS = 0.3  # Long enough for the second call to reach the locked row.
 
 
 def _new_phone() -> str:
@@ -74,3 +76,21 @@ async def test_a_lid_with_no_number_moves_nobody(owner_engine: AsyncEngine, bot:
     await bot.say(new_lid(), "makan 25rb")
     assert bot.waha.texts == []
     assert (await _whatsapp_id_of(owner_engine, person_id) or "").endswith(PHONE_SUFFIX)
+
+
+async def test_a_second_message_during_the_move_still_finds_the_person(
+    owner_engine: AsyncEngine, app_engine: AsyncEngine, bot: Bot
+) -> None:
+    """Two messages at once as the new LID: the one that waits on the move must not be a stranger."""
+    person_id, phone = await _person_linked_by_number(owner_engine, bot)
+    lid = new_lid()
+    async with app_engine.connect() as first_message:
+        transaction = await first_message.begin()
+        moved = await first_message.scalar(
+            text("SELECT tracker_resolve_sender(:id, :phone)"), {"id": lid, "phone": phone}
+        )
+        assert moved == person_id
+        second_message = asyncio.create_task(resolve_sender(app_engine, lid, phone))
+        await asyncio.sleep(MOVE_LOCK_WAIT_SECONDS)  # The second now waits on the first's row lock.
+        await transaction.commit()
+    assert await second_message == person_id

@@ -40,6 +40,12 @@ def upgrade() -> None:
                         WHERE whatsapp_id = sender_phone || '@c.us' AND suspended_at IS NULL
                         RETURNING id INTO resolved_id;
                 END IF;
+                -- A second message that waited on another's move finds the row already on
+                -- the LID, so the move matches nothing. Look again: this statement sees it.
+                IF resolved_id IS NULL THEN
+                    SELECT id INTO resolved_id FROM public.person
+                        WHERE whatsapp_id = sender_id AND suspended_at IS NULL;
+                END IF;
                 RETURN resolved_id;
             END
             $$
