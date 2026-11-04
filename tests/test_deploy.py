@@ -230,6 +230,7 @@ def test_the_runbook_names_every_server_check() -> None:
         "age -d -i <key> tracker-*.dump.age | pg_restore -h 127.0.0.1",
         "uv run tracker deletions-reapply <merged list>",
         "ssh -L <port>:127.0.0.1:5432 <server>",
+        "host tracker tracker_owner 127.0.0.1/32 scram-sha-256",
         'sed -i "s/^TRACKER_VERSION=.*/TRACKER_VERSION=$(git rev-parse HEAD)/" ops/.env',
         "Docker Engine is 28 or later",
         "rclone lsf --s3-versions :s3:<bucket>/tracker",
