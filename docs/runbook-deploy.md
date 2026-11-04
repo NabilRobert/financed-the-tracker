@@ -122,7 +122,7 @@ back. With the export cron line paused, take it out of all three, then restore t
 from a backup:
 1. `DELETE FROM deleted_person WHERE person_id = <id>`, as the owner;
 2. the line in `ops/deletions/deleted-ids.txt`;
-3. the line in the bucket's `tracker-deletions/deleted-ids.txt` (versioning keeps the old copy).
+3. the line in the bucket's `tracker-deletions/deleted-ids.txt`: `rclone cat` it, remove the line, and `rclone rcat` it back. Take it out of the server's file first, or the next run's merge puts it back.
 
 The drill, timed, with WAHA stopped (`docker compose stop waha`):
 
