@@ -107,7 +107,12 @@ services:
       - ./deletions:/deletions
 
 networks:
-  tracker: {}
+  tracker:
+    # Pinned, so pg_hba.conf can allow tracker_app from this subnet alone, and tracker_owner
+    # only from the default bridge, where migrate and cli run (L3, runbook step 7).
+    ipam:
+      config:
+        - subnet: ${TRACKER_NETWORK_SUBNET:?pick a free /24 for the tracker network}
   monitoring:
     external: true
     name: systems-monitoring_default

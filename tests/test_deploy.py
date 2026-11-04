@@ -119,6 +119,11 @@ def test_the_app_container_is_locked_down() -> None:
         assert setting in app
 
 
+def test_the_apps_network_is_pinned_so_postgres_can_allow_it_alone() -> None:
+    networks = COMPOSE[COMPOSE.index("\nnetworks:") :]
+    assert "- subnet: ${TRACKER_NETWORK_SUBNET:?" in networks
+
+
 def test_waha_is_pinned_and_private() -> None:
     waha = _service("waha")
     assert DIGEST.search(waha)
@@ -203,6 +208,22 @@ def test_the_backup_uploads_prunes_then_reports_success(tmp_path: Path) -> None:
     assert any(call.startswith("rclone lsf :s3:example-bucket/tracker ") for call in calls)
 
 
+def test_the_owner_password_never_reaches_pg_dumps_command_line(tmp_path: Path) -> None:
+    """Any local user can read a command line; the password comes from a passfile (L1)."""
+    stubs = {"pg_dump": 'echo "PGPASSFILE=$PGPASSFILE" >> "$CALL_LOG"', "age": "", "rclone": "", "curl": ""}
+    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
+    assert "pg_dump postgresql://owner@db.invalid:5432/tracker --format=custom" in calls
+    assert "PGPASSFILE=/example/pgpass" in calls
+
+
+def test_a_database_url_holding_a_password_is_refused(tmp_path: Path) -> None:
+    stubs = {"pg_dump": "", "age": "", "rclone": "", "curl": ""}
+    settings_changes = {"BACKUP_DATABASE_URL": "postgresql://owner:example@db.invalid/tracker"}
+    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs, settings_changes)
+    assert not any(call.startswith("pg_dump") for call in calls)
+    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
+
+
 def test_a_failed_dump_reports_failure(tmp_path: Path) -> None:
     stubs = {"pg_dump": "exit 1", "age": "", "rclone": "", "curl": ""}
     calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
@@ -235,6 +256,11 @@ def test_the_runbook_names_every_server_check() -> None:
         "DELETE FROM deleted_person WHERE person_id = <id>",
         "install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions",
         "Leave the bucket's versioning off",
+        "the server's Postgres log",
+        "BACKUP_PGPASSFILE",
+        "age -d -i <key> tracker-*.dump.age | pg_restore",
+        "-v <folder>:/out cli export",
+        "Docker Engine is 28 or later",
         "rclone lsf --s3-versions :s3:<bucket>/tracker",
         "DELETIONS_HEALTHCHECK_URL",
         "probe",

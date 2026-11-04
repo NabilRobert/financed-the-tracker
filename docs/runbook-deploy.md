@@ -20,11 +20,13 @@ Nothing is published to the internet. WAHA connects out to WhatsApp, and calls t
 ## 1. Prepare
 
 1. The tracker's database and its two logins (`ops/db/roles.sql`), with passwords from a
-   secret file. The server's Postgres must accept them from the Docker bridge only.
+   secret file. The server's Postgres accepts each from one subnet only (step 7).
 2. `ops/.env.app` with what `tracker/channel/settings.py` lists, and `ops/.env.owner` with
    `TRACKER_MIGRATOR_DATABASE_URL`. Both readable by the owner account only (`chmod 600`).
    `.env.app` must not contain the owner's login.
 3. In the shell that runs compose:
+   - `TRACKER_NETWORK_SUBNET`: a free `/24` for the app's network, one no other Docker
+     network on the server uses.
    - `WAHA_API_KEY_SHA512`: `sha512:` followed by the hex SHA-512 of the plain key. The
      plain key goes in `.env.app` as `WAHA_API_KEY`, and only ever in a header: WAHA also
      accepts it in a URL, where logs would keep it.
@@ -35,10 +37,16 @@ Nothing is published to the internet. WAHA connects out to WhatsApp, and calls t
    uid 65534, so the folder must be 755 and `app.log` 644. A tighter umask would hide the log
    from it with no error.
 6. The monitoring stack is up first: the app joins its network, `systems-monitoring_default`.
-7. Postgres accepts the two logins from the Docker bridge's subnet only: `listen_addresses`,
-   `pg_hba.conf` lines for that subnet, and a ufw rule for 5432 from it. Servers & security
-   owns this.
-8. AIDE excludes `ops/waha-sessions`, or its daily report lists the WhatsApp session files.
+7. Postgres accepts each login from one subnet: `tracker_app` from `TRACKER_NETWORK_SUBNET`,
+   and `tracker_owner` from the default bridge's subnet (`docker network inspect bridge`),
+   where migrate and cli run. That's `listen_addresses`, two `pg_hba.conf` lines, and ufw
+   rules for 5432 from those two subnets only. Never widen it to `172.16.0.0/12`, which lets
+   every container on the server reach 5432. After the first start, check that
+   `SELECT usename, client_addr FROM pg_stat_activity` shows `tracker_app` inside
+   `TRACKER_NETWORK_SUBNET`. Servers & security owns this.
+8. Docker Engine is 28 or later (`docker version --format '{{.Server.Version}}'`): older
+   versions let hosts on the same network reach ports published on `127.0.0.1`.
+9. AIDE excludes `ops/waha-sessions`, or its daily report lists the WhatsApp session files.
 
 ## 2. Build and migrate
 
@@ -68,7 +76,7 @@ fixtures, and fix the adapter before going further.
 |---|---|
 | 1 | A forged request: post a body with a wrong `X-Webhook-Hmac` to the app's loopback port. Expect 403, and no new row |
 | 2 | Run the isolation suite against a scratch copy of the deployed schema |
-| 3 | Send a sentinel message such as `zzsentinelzz 98.765`, then search the app's and WAHA's container logs, the systems-monitoring logs and any trace store for `zzsentinelzz` and `98765`. Expect nothing |
+| 3 | Send a sentinel message such as `zzsentinelzz 98.765`, then search the app's and WAHA's container logs, the systems-monitoring logs, any trace store and the server's Postgres log for `zzsentinelzz` and `98765`. Then stop `app`, send a second sentinel so WAHA's delivery fails, start `app`, and search WAHA's log again. Expect nothing |
 | 4, 5, 21 | The restore drill below |
 | 8 | `docker compose exec app env` shows no owner login, and `docker inspect` shows user 10001 and a read-only root |
 | 15 | From outside the server, a probe of ports 3000, 8099 and 5432: expect nothing to answer |
@@ -90,6 +98,11 @@ install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions
 **Leave the bucket's versioning off.** With it on, the backup's pruning only adds a delete
 marker, and every pruned dump stays as an old version, which breaks the notice's "paling
 lama 14 hari". The deletion list doesn't need it: its upload only ever adds ids.
+
+The backup settings file (`chmod 600`, owner account) holds the S3 and age settings,
+`BACKUP_DATABASE_URL` (the owner login with no password in it, which the script refuses)
+and `BACKUP_PGPASSFILE`, a `chmod 600` `.pgpass` holding the password, so it never appears
+on `pg_dump`'s command line.
 
 Cron, as the owner account:
 
@@ -127,8 +140,9 @@ from a backup:
 The drill, timed, with WAHA stopped (`docker compose stop waha`):
 
 1. Copy the newest `tracker-*.dump.age` from S3 to a machine that holds the age private
-   key. Decrypt it there, never on the server.
-2. Restore into an empty database.
+   key, never the server.
+2. Restore it there into an empty, throwaway Postgres, without writing the decrypted dump
+   to disk: `age -d -i <key> tracker-*.dump.age | pg_restore --no-owner -d <scratch database>`.
 3. **Before anything else, and before anyone is added**, run `deletions-reapply` with every
    id either copy holds: `sort -un` the server's `ops/deletions/deleted-ids.txt` and the
    bucket's `tracker-deletions/deleted-ids.txt` into one file. If the server is gone, use the
@@ -138,7 +152,9 @@ The drill, timed, with WAHA stopped (`docker compose stop waha`):
 4. Compare row counts with the live database, and check that every id in the list is gone.
    Check the 14-day promise too: `rclone lsf --s3-versions :s3:<bucket>/tracker` lists no
    dump older than 15 days, and no old versions at all.
-5. Run `tracker export` for one person: it must work with WAHA stopped.
+5. Run `tracker export` for one person: it must work with WAHA stopped. The cli container's
+   disk goes when it exits, so mount a folder owned by 10001 for the file:
+   `docker compose -f ops/compose.yaml --profile tools run --rm -v <folder>:/out cli export <id> /out/check.csv`.
 6. Record how long it took. Delete the restored copy.
 
 On a server rebuilt after a loss, the restore is the real thing: add the
