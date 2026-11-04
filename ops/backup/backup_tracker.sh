@@ -21,8 +21,14 @@ PREFIX="tracker"
 
 start_heartbeat "$(grep '^BACKUP_HEALTHCHECK_URL=' "$ENV_FILE" | cut -d= -f2- || true)"
 
-# Validate everything before dumping anything.
-DB_URL="$(require TRACKER_MIGRATOR_DATABASE_URL | sed -E 's#^postgresql\+[a-z]+://#postgresql://#')"
+# Validate everything before dumping anything. The URL carries no password: pg_dump reads
+# it from a passfile, because any local user can read a command line in `ps` (L1).
+DB_URL="$(require BACKUP_DATABASE_URL)"
+case "$DB_URL" in
+  *://*:*@*) echo "backup: BACKUP_DATABASE_URL holds a password: move it to BACKUP_PGPASSFILE" >&2; exit 1 ;;
+esac
+PGPASSFILE="$(require BACKUP_PGPASSFILE)"
+export PGPASSFILE
 AGE_RECIPIENT="$(require AGE_RECIPIENT)"
 configure_s3
 REMOTE=":s3:$S3_BUCKET/$PREFIX"

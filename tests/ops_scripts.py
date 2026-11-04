@@ -18,7 +18,8 @@ FAKE_SETTINGS = {
     "AWS_ACCESS_KEY_ID": "example-id",
     "AWS_SECRET_ACCESS_KEY": "example-secret",
     "AGE_RECIPIENT": "example-recipient",
-    "TRACKER_MIGRATOR_DATABASE_URL": "postgresql+psycopg://owner:example@db.invalid/tracker",
+    "BACKUP_DATABASE_URL": "postgresql://owner@db.invalid:5432/tracker",
+    "BACKUP_PGPASSFILE": "/example/pgpass",
     "BACKUP_HEALTHCHECK_URL": HEALTHCHECK_URL,
     "DELETIONS_HEALTHCHECK_URL": HEALTHCHECK_URL,
 }
@@ -38,15 +39,18 @@ def copy_ops_folder(tmp_path: Path) -> Path:
     return ops
 
 
-def run_with_stubs(script: Path, tmp_path: Path, stubs_by_name: dict[str, str]) -> list[str]:
+def run_with_stubs(
+    script: Path, tmp_path: Path, stubs_by_name: dict[str, str], settings_changes: dict[str, str] | None = None
+) -> list[str]:
     """Runs the script with a stub for each named command, which then runs the given shell
-    ("" to succeed). Returns the calls, one per line."""
+    ("" to succeed), and the fake settings with any changes. Returns the calls, one per line."""
     stubs = tmp_path / "bin"
     stubs.mkdir()
     for name, behaviour in stubs_by_name.items():
         _write_stub(stubs, name, behaviour)
     settings = tmp_path / "backup.env"
-    settings.write_text("".join(f"{key}={value}\n" for key, value in FAKE_SETTINGS.items()), encoding="utf-8")
+    values = FAKE_SETTINGS | (settings_changes or {})
+    settings.write_text("".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8")
     call_log = tmp_path / "calls.log"
     call_log.touch()
     environment = {
