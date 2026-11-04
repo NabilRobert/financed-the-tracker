@@ -1,16 +1,18 @@
-"""Slice 5's local half: the image, the compose file and the backup. Deletions are in test_deletions.py.
+"""Slice 5's local half: the image and the compose file. The backup and deletions have their own files.
 
 The server half (probes, a restore drill, permissions) is in docs/runbook-deploy.md, and
 each of its checks is a line of the real-data gate.
 """
 
 import logging
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 from conftest import Bot
-from ops_scripts import HEALTHCHECK_URL, run_with_stubs
 
 from tracker.ledger.summaries import today_in_jakarta
 from tracker.serve import DEFAULT_BIND_HOST, bind_host, configure_logging
@@ -18,7 +20,6 @@ from tracker.serve import DEFAULT_BIND_HOST, bind_host, configure_logging
 REPO_ROOT = Path(__file__).parent.parent
 DOCKERFILE = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
 COMPOSE = (REPO_ROOT / "ops" / "compose.yaml").read_text(encoding="utf-8")
-BACKUP_SCRIPT = (REPO_ROOT / "ops" / "backup" / "backup_tracker.sh").read_text(encoding="utf-8")
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}")
 
 
@@ -119,6 +120,35 @@ def test_the_app_container_is_locked_down() -> None:
         assert setting in app
 
 
+def test_the_env_example_lists_every_variable_compose_requires() -> None:
+    """Cron runs compose with an empty environment, so every value must come from ops/.env (R16)."""
+    required = set(re.findall(r"\$\{([A-Z0-9_]+):\?", COMPOSE))
+    example = (REPO_ROOT / "ops" / ".env.example").read_text(encoding="utf-8")
+    listed = set(re.findall(r"^([A-Z0-9_]+)=", example, flags=re.MULTILINE))
+    assert listed == required
+
+
+def test_compose_works_from_crons_empty_environment(tmp_path: Path) -> None:
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("docker isn't installed here")
+    ops = tmp_path / "ops"
+    ops.mkdir()
+    shutil.copy(REPO_ROOT / "ops" / "compose.yaml", ops / "compose.yaml")
+    for env_file in (".env.app", ".env.owner"):
+        (ops / env_file).touch()
+    sample = {
+        "TRACKER_VERSION": "test",
+        "TRACKER_NETWORK_SUBNET": "10.99.0.0/24",
+        "WAHA_API_KEY_SHA512": "sha512:00",
+        "WAHA_UNUSED_PANEL_PASSWORD": "unused",
+    }
+    (ops / ".env").write_text("".join(f"{key}={value}\n" for key, value in sample.items()), encoding="utf-8")
+    command = [docker, "compose", "-f", str(ops / "compose.yaml"), "--profile", "tools", "config", "--quiet"]
+    result = subprocess.run(command, env={"PATH": os.environ["PATH"]}, capture_output=True, text=True, check=False)  # noqa: S603 - fixed arguments.
+    assert result.returncode == 0, result.stderr
+
+
 def test_the_apps_network_is_pinned_so_postgres_can_allow_it_alone() -> None:
     networks = COMPOSE[COMPOSE.index("\nnetworks:") :]
     assert "- subnet: ${TRACKER_NETWORK_SUBNET:?" in networks
@@ -180,61 +210,6 @@ def test_the_app_binds_to_loopback_unless_told_otherwise() -> None:
     assert bind_host({}) == DEFAULT_BIND_HOST == "127.0.0.1"
 
 
-# The backup.
-def test_nothing_readable_touches_the_disk_during_a_backup() -> None:
-    assert '| age -r "$AGE_RECIPIENT" | rclone rcat' in BACKUP_SCRIPT
-    assert not re.search(r"--file[= ]", BACKUP_SCRIPT)
-    assert "set -euo pipefail" in BACKUP_SCRIPT
-
-
-def test_the_backup_key_is_configuration_not_code() -> None:
-    assert not re.search(r"age1[0-9a-z]{20,}", BACKUP_SCRIPT)
-    assert 'AGE_RECIPIENT="$(require AGE_RECIPIENT)"' in BACKUP_SCRIPT
-
-
-def test_the_backup_keeps_the_period_the_notice_states() -> None:
-    from tracker.channel.replies import CONSENT_NOTICE
-
-    assert "KEEP=14" in BACKUP_SCRIPT
-    assert "paling lama 14 hari" in CONSENT_NOTICE
-
-
-def test_the_backup_uploads_prunes_then_reports_success(tmp_path: Path) -> None:
-    stubs = {"pg_dump": "", "age": "", "rclone": "", "curl": ""}
-    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
-    assert calls[0].endswith(f"{HEALTHCHECK_URL}/start")
-    assert calls[-1].endswith(HEALTHCHECK_URL)
-    assert any(call.startswith("rclone rcat :s3:example-bucket/tracker/tracker-") for call in calls)
-    assert any(call.startswith("rclone lsf :s3:example-bucket/tracker ") for call in calls)
-
-
-def test_the_owner_password_never_reaches_pg_dumps_command_line(tmp_path: Path) -> None:
-    """Any local user can read a command line; the password comes from a passfile (L1)."""
-    stubs = {"pg_dump": 'echo "PGPASSFILE=$PGPASSFILE" >> "$CALL_LOG"', "age": "", "rclone": "", "curl": ""}
-    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
-    assert "pg_dump postgresql://owner@db.invalid:5432/tracker --format=custom" in calls
-    assert "PGPASSFILE=/example/pgpass" in calls
-
-
-def test_a_database_url_holding_a_password_is_refused(tmp_path: Path) -> None:
-    stubs = {"pg_dump": "", "age": "", "rclone": "", "curl": ""}
-    settings_changes = {"BACKUP_DATABASE_URL": "postgresql://owner:example@db.invalid/tracker"}
-    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs, settings_changes)
-    assert not any(call.startswith("pg_dump") for call in calls)
-    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
-
-
-def test_a_failed_dump_reports_failure(tmp_path: Path) -> None:
-    stubs = {"pg_dump": "exit 1", "age": "", "rclone": "", "curl": ""}
-    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
-    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
-    assert not any(call.startswith("rclone lsf") for call in calls)
-
-
-def test_whatsapps_session_files_are_not_backed_up() -> None:
-    assert ".sessions" not in BACKUP_SCRIPT.replace("WAHA's session files", "")
-
-
 async def test_each_message_logs_a_content_free_heartbeat(
     bot: Bot, member: str, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -258,8 +233,10 @@ def test_the_runbook_names_every_server_check() -> None:
         "Leave the bucket's versioning off",
         "the server's Postgres log",
         "BACKUP_PGPASSFILE",
-        "age -d -i <key> tracker-*.dump.age | pg_restore",
-        "-v <folder>:/out cli export",
+        "age -d -i <key> tracker-*.dump.age | pg_restore -h 127.0.0.1",
+        "uv run tracker deletions-reapply <merged list>",
+        "ssh -L <port>:127.0.0.1:5432 <server>",
+        'sed -i "s/^TRACKER_VERSION=.*/TRACKER_VERSION=$(git rev-parse HEAD)/" ops/.env',
         "Docker Engine is 28 or later",
         "rclone lsf --s3-versions :s3:<bucket>/tracker",
         "DELETIONS_HEALTHCHECK_URL",
