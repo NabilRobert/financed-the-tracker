@@ -9,6 +9,7 @@
 # both together.
 #
 # Run by cron as the owner account. Every secret comes from TRACKER_BACKUP_ENV at run time.
+# It also runs the nightly purge of expired records, so retention shares the heartbeat.
 # Only files named tracker-*.dump.age in tracker/ are pruned, so the deletion list in
 # tracker-deletions/ (export_deletions.sh) is never touched.
 # WAHA's session files are deliberately not backed up: they are the WhatsApp account (T35).
@@ -16,6 +17,7 @@ set -euo pipefail
 umask 077
 
 source "$(dirname "$0")/settings.sh"
+OPS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 KEEP=14
 PREFIX="tracker"
 
@@ -25,7 +27,7 @@ start_heartbeat "$(grep '^BACKUP_HEALTHCHECK_URL=' "$ENV_FILE" | cut -d= -f2- ||
 # it from a passfile, because any local user can read a command line in `ps` (L1).
 DB_URL="$(require BACKUP_DATABASE_URL)"
 case "$DB_URL" in
-  *://*:*@*) echo "backup: BACKUP_DATABASE_URL holds a password: move it to BACKUP_PGPASSFILE" >&2; exit 1 ;;
+  *://*:*@* | *password=*) echo "backup: BACKUP_DATABASE_URL holds a password: move it to BACKUP_PGPASSFILE" >&2; exit 1 ;;
 esac
 PGPASSFILE="$(require BACKUP_PGPASSFILE)"
 export PGPASSFILE
@@ -41,5 +43,9 @@ pg_dump "$DB_URL" --format=custom | age -r "$AGE_RECIPIENT" | rclone rcat "$REMO
 rclone lsf "$REMOTE" --files-only --include "$PREFIX-*.dump.age" \
   | sort -r | tail -n +$((KEEP + 1)) \
   | xargs -r -I{} rclone deletefile "$REMOTE/{}"
+
+# Retention (PR6) runs here, under this heartbeat, so a purge that stops running alerts.
+# After the backup, so a failing purge never costs a night's backup; the script still fails.
+docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli purge
 
 ping_hc ""

@@ -24,7 +24,8 @@ Nothing is published to the internet. WAHA connects out to WhatsApp, and calls t
 2. `ops/.env.app` with what `tracker/channel/settings.py` lists, and `ops/.env.owner` with
    `TRACKER_MIGRATOR_DATABASE_URL`. Both readable by the owner account only (`chmod 600`).
    `.env.app` must not contain the owner's login.
-3. In the shell that runs compose:
+3. `ops/.env`, copied from `ops/.env.example` and `chmod 600`. Compose reads it by itself,
+   so cron's empty environment gets the same values as the deploy shell:
    - `TRACKER_NETWORK_SUBNET`: a free `/24` for the app's network, one no other Docker
      network on the server uses.
    - `WAHA_API_KEY_SHA512`: `sha512:` followed by the hex SHA-512 of the plain key. The
@@ -51,7 +52,7 @@ Nothing is published to the internet. WAHA connects out to WhatsApp, and calls t
 ## 2. Build and migrate
 
 ```bash
-export TRACKER_VERSION=$(git rev-parse HEAD)
+sed -i "s/^TRACKER_VERSION=.*/TRACKER_VERSION=$(git rev-parse HEAD)/" ops/.env
 docker compose -f ops/compose.yaml build app
 docker compose -f ops/compose.yaml --profile tools run --rm migrate
 docker compose -f ops/compose.yaml up -d
@@ -109,7 +110,6 @@ Cron, as the owner account:
 ```bash
 17 3 * * *   TRACKER_BACKUP_ENV=<backup settings file> <repo>/ops/backup/backup_tracker.sh
 */15 * * * * TRACKER_BACKUP_ENV=<backup settings file> <repo>/ops/backup/export_deletions.sh
-20 4 * * *   docker compose -f <repo>/ops/compose.yaml --profile tools run --rm cli purge
 ```
 
 `export_deletions.sh` runs `deletions-export` into `ops/deletions/deleted-ids.txt`, which
@@ -137,28 +137,39 @@ from a backup:
 2. the line in `ops/deletions/deleted-ids.txt`;
 3. the line in the bucket's `tracker-deletions/deleted-ids.txt`: `rclone cat` it, remove the line, and `rclone rcat` it back. Take it out of the server's file first, or the next run's merge puts it back.
 
-The drill, timed, with WAHA stopped (`docker compose stop waha`):
+`backup_tracker.sh` also runs the nightly purge of expired records, after the upload, so
+retention shares the backup's heartbeat.
 
-1. Copy the newest `tracker-*.dump.age` from S3 to a machine that holds the age private
-   key, never the server.
-2. Restore it there into an empty, throwaway Postgres, without writing the decrypted dump
-   to disk: `age -d -i <key> tracker-*.dump.age | pg_restore --no-owner -d <scratch database>`.
-3. **Before anything else, and before anyone is added**, run `deletions-reapply` with every
-   id either copy holds: `sort -un` the server's `ops/deletions/deleted-ids.txt` and the
-   bucket's `tracker-deletions/deleted-ids.txt` into one file. If the server is gone, use the
-   bucket's alone. It refuses a missing or empty list; `--empty-ok` is only for a database
-   nobody has ever left. It also moves the id counter past every listed id, because the
-   restore set it back.
+The drill, timed, runs entirely on a machine that holds the age private key, never on the
+server, so nothing in it touches the live database. WAHA isn't needed.
+
+1. Copy there the newest `tracker-*.dump.age` from the bucket, the bucket's
+   `tracker-deletions/deleted-ids.txt` and the server's `ops/deletions/deleted-ids.txt`, then
+   `sort -un` the two lists into one file.
+2. Start a throwaway Postgres on that machine. Run `ops/db/roles.sql` in it, give
+   `tracker_owner` a password, and create an empty `tracker` database owned by it. Then
+   restore without writing the decrypted dump to disk:
+   `age -d -i <key> tracker-*.dump.age | pg_restore -h 127.0.0.1 -p <port> -U tracker_owner -d tracker`.
+3. From a checkout of the repo, point the CLI at that copy, not the live one:
+   `export TRACKER_MIGRATOR_DATABASE_URL=postgresql+asyncpg://tracker_owner:<password>@127.0.0.1:<port>/tracker`.
+   **Before anything else, and before anyone is added**, run
+   `uv run tracker deletions-reapply <merged list>`. It refuses a missing or empty list;
+   `--empty-ok` is only for a database nobody has ever left. It also moves the id counter
+   past every listed id, because the restore set it back.
 4. Compare row counts with the live database, and check that every id in the list is gone.
    Check the 14-day promise too: `rclone lsf --s3-versions :s3:<bucket>/tracker` lists no
    dump older than 15 days, and no old versions at all.
-5. Run `tracker export` for one person: it must work with WAHA stopped. The cli container's
-   disk goes when it exits, so mount a folder owned by 10001 for the file:
-   `docker compose -f ops/compose.yaml --profile tools run --rm -v <folder>:/out cli export <id> /out/check.csv`.
-6. Record how long it took. Delete the restored copy.
+5. `uv run tracker export <id> check.csv` for one person: it needs only the database.
+6. Record how long it took. Delete the throwaway database and the CSV.
 
-On a server rebuilt after a loss, the restore is the real thing: add the
-`export_deletions.sh` cron line only after step 3.
+**After losing the server,** the restore is the real thing, into the new server's Postgres:
+- section 1 there first, including `roles.sql` and an empty `tracker` database;
+- the same stream over an SSH tunnel to its Postgres:
+  `ssh -L <port>:127.0.0.1:5432 <server>`, then step 2's `age -d … | pg_restore -h 127.0.0.1 -p <port> …`;
+- the bucket's list as `ops/deletions/deleted-ids.txt`, then
+  `docker compose -f ops/compose.yaml --profile tools run --rm cli deletions-reapply /deletions/deleted-ids.txt`
+  before the app starts or anyone is added;
+- only then the `export_deletions.sh` cron line.
 
 ## 7. Secret rotation, rehearsed once
 
