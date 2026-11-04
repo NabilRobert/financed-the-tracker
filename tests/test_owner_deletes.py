@@ -2,14 +2,15 @@
 
 The app is the only part that knows who sent a message, so a taken-over app could
 confirm a deletion for anyone. It can't delete, though: the owner job does that every
-15 minutes, at most two people a run. More than that waiting looks like a taken-over app,
-so the job deletes none, and fails so the heartbeat alerts Arthur.
+15 minutes, at most two people a day. More than that looks like a taken-over app, so the
+job deletes none, and fails so the heartbeat alerts Arthur.
 """
 
 import asyncio
 
 import pytest
 from conftest import Bot, database_url
+from ledger_helpers import quiet_the_deletion_window, run_the_deletion_job
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -19,7 +20,7 @@ from webhook_fixtures import new_lid
 from tracker.channel.replies import DELETE_HOW, DELETED
 from tracker.cli import OWNER_URL_ENV
 from tracker.cli import app as cli_app
-from tracker.ledger.deletions import MAX_DELETIONS_PER_RUN, cancel_confirmed_deletion, run_confirmed_deletions
+from tracker.ledger.deletions import MAX_DELETIONS_PER_DAY, cancel_confirmed_deletion, run_confirmed_deletions
 from tracker.ledger.people import confirm_deletion, create_person
 from tracker.ledger.scope import person_transaction
 
@@ -64,13 +65,14 @@ async def test_hapus_semua_locks_the_person_out_and_says_when_it_happens(
     bot.waha.texts.clear()
     await bot.say(member, "rekap")
     assert bot.waha.texts == []
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
 
 
 async def test_the_owner_job_deletes_everyone_confirmed_up_to_the_cap(
     owner_engine: AsyncEngine, app_engine: AsyncEngine
 ) -> None:
-    people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_RUN)
+    await quiet_the_deletion_window(owner_engine)
+    people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_DAY)
     result = await run_confirmed_deletions(owner_engine)
     assert (result.deleted, result.held) == (people, [])
     for person_id in people:
@@ -78,7 +80,8 @@ async def test_the_owner_job_deletes_everyone_confirmed_up_to_the_cap(
 
 
 async def test_more_confirmed_than_the_cap_are_all_held(owner_engine: AsyncEngine, app_engine: AsyncEngine) -> None:
-    people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_RUN + 1)
+    await quiet_the_deletion_window(owner_engine)
+    people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_DAY + 1)
     try:
         result = await run_confirmed_deletions(owner_engine)
         assert (result.deleted, result.held) == ([], people)
@@ -93,7 +96,7 @@ async def test_the_cli_fails_on_a_hold_so_the_heartbeat_alerts(
     owner_engine: AsyncEngine, app_engine: AsyncEngine, database_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(OWNER_URL_ENV, database_url("tracker_owner", database_name))
-    people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_RUN + 1)
+    people = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_DAY + 1)
     try:
         # A thread, because the CLI runs its own event loop.
         result = await asyncio.to_thread(runner.invoke, cli_app, ["deletions-run"])
@@ -108,6 +111,7 @@ async def test_the_cli_deletes_when_nothing_is_held(
     owner_engine: AsyncEngine, app_engine: AsyncEngine, database_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(OWNER_URL_ENV, database_url("tracker_owner", database_name))
+    await quiet_the_deletion_window(owner_engine)
     [person_id] = await _confirmed_people(owner_engine, app_engine, 1)
     result = await asyncio.to_thread(runner.invoke, cli_app, ["deletions-run"])
     assert result.exit_code == 0
@@ -144,4 +148,31 @@ async def test_a_person_who_confirmed_by_number_is_not_let_back_in_by_their_lid(
     bot.waha.texts.clear()
     await bot.say(lid, "rekap")
     assert bot.waha.texts == []
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
+
+
+async def test_confirmations_spread_across_runs_are_held_once_the_day_is_full(
+    owner_engine: AsyncEngine, app_engine: AsyncEngine
+) -> None:
+    """A taken-over app can't get past the cap by confirming two people every 15 minutes."""
+    await quiet_the_deletion_window(owner_engine)
+    first_two = await _confirmed_people(owner_engine, app_engine, MAX_DELETIONS_PER_DAY)
+    assert (await run_confirmed_deletions(owner_engine)).deleted == first_two
+    one_more = await _confirmed_people(owner_engine, app_engine, 1)
+    try:
+        result = await run_confirmed_deletions(owner_engine)
+        assert (result.deleted, result.held) == ([], one_more)
+    finally:
+        await cancel_confirmed_deletion(owner_engine, one_more[0])
+
+
+async def test_the_app_cannot_undo_a_confirmed_deletion(owner_engine: AsyncEngine, app_engine: AsyncEngine) -> None:
+    [person_id] = await _confirmed_people(owner_engine, app_engine, 1)
+    try:
+        with pytest.raises(DBAPIError, match="only be cancelled by the owner"):
+            async with person_transaction(app_engine, person_id) as scope:
+                await scope.connection.execute(
+                    text("UPDATE person SET deletion_confirmed_at = NULL WHERE id = :id"), {"id": person_id}
+                )
+    finally:
+        await cancel_confirmed_deletion(owner_engine, person_id)

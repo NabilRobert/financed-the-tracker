@@ -19,9 +19,11 @@ start_heartbeat "$(require DELETIONS_HEALTHCHECK_URL)"
 configure_s3
 
 COMPOSE=(docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli)
-# Deletes everyone who confirmed `hapus semua` (M1). More than two waiting is a hold: it
-# deletes none and fails, so the heartbeat alerts, and nothing below runs until Arthur acts.
-"${COMPOSE[@]}" deletions-run
+# Deletes everyone who confirmed `hapus semua` (M1). More than two in a day is a hold: it
+# deletes none and fails. The export and upload still run, so a `tracker delete` made by
+# hand during a hold is copied off, and the script fails at the end, so the heartbeat alerts.
+deletions_failed=0
+"${COMPOSE[@]}" deletions-run || deletions_failed=1
 "${COMPOSE[@]}" deletions-export /deletions/deleted-ids.txt
 
 # Merge with the bucket's copy before uploading, so the upload can only add ids. A server
@@ -38,4 +40,5 @@ if [ "$merged" != "$in_bucket" ]; then
   printf '%s\n' "$merged" | rclone rcat "$REMOTE_DIR/deleted-ids.txt"
 fi
 
+if [ "$deletions_failed" -ne 0 ]; then exit 1; fi
 ping_hc ""

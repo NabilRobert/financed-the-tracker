@@ -9,6 +9,7 @@ from datetime import timedelta
 import httpx
 import pytest
 from conftest import Bot, database_url
+from ledger_helpers import run_the_deletion_job
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -27,7 +28,6 @@ from tracker.channel.waha import SEND_ATTEMPTS, WahaGateway
 from tracker.channel.webhook import create_app
 from tracker.cli import OWNER_URL_ENV
 from tracker.cli import app as cli_app
-from tracker.ledger.deletions import run_confirmed_deletions
 from tracker.ledger.engine import create_engine
 from tracker.ledger.entries import MessageOutcome, record_outcome
 from tracker.ledger.people import create_person, delete_person_in_scope
@@ -98,7 +98,7 @@ async def test_hapus_data_saya_leaves_zero_rows_for_that_person_alone(
     assert await rows_left_for(owner_engine, person_id) == before | {"inbound_message": before["inbound_message"] + 1}
     await bot.say(member, "hapus semua")
     assert bot.waha.texts[-1] == DELETED
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
 
     assert set((await rows_left_for(owner_engine, person_id)).values()) == {0}
     assert await rows_left_for(owner_engine, other_id) == other_before
@@ -107,7 +107,7 @@ async def test_hapus_data_saya_leaves_zero_rows_for_that_person_alone(
 async def test_a_deleted_person_is_a_stranger_afterwards(owner_engine: AsyncEngine, bot: Bot, member: str) -> None:
     await bot.say(member, "hapus data saya")
     await bot.say(member, "hapus semua")
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
     bot.waha.texts.clear()
     await bot.say(member, "rekap")
     assert bot.waha.texts == []
@@ -117,7 +117,7 @@ async def test_a_deletion_leaves_only_the_id_behind(owner_engine: AsyncEngine, b
     person_id = await person_id_of(owner_engine, member)
     await bot.say(member, "hapus data saya")
     await bot.say(member, "hapus semua")
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
     async with owner_engine.connect() as connection:
         result = await connection.execute(text("SELECT * FROM deleted_person WHERE person_id = :id"), {"id": person_id})
         rows = result.all()
@@ -154,7 +154,7 @@ async def test_a_deletion_request_inside_the_window_still_counts(
         )
     await bot.say(member, "hapus semua")
     assert bot.waha.texts[-1] == DELETED
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
 
 
 @pytest.mark.parametrize("message", ["hapus", "hapus data", "hapus semuanya dong"])

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from conftest import Bot, database_url
+from ledger_helpers import run_the_deletion_job
 from ops_scripts import HEALTHCHECK_URL, copy_ops_folder, run_with_stubs
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -24,7 +25,6 @@ from tracker.ledger.deletions import (
     export_deleted_ids,
     read_deleted_ids,
     reapply_deletions,
-    run_confirmed_deletions,
 )
 from tracker.ledger.people import create_person, delete_person
 
@@ -63,7 +63,7 @@ async def test_a_deletion_is_reapplied_after_a_restore(
         )
     await bot.say(member, "hapus data saya")
     await bot.say(member, "hapus semua")
-    await run_confirmed_deletions(owner_engine)
+    await run_the_deletion_job(owner_engine)
     deleted_list = tmp_path / "deleted-ids.txt"
     await export_deleted_ids(owner_engine, deleted_list)
 
@@ -248,9 +248,19 @@ def test_nothing_is_uploaded_when_the_bucket_already_has_every_id(tmp_path: Path
     assert calls[-1].endswith(HEALTHCHECK_URL)
 
 
-def test_a_hold_or_a_failed_run_uploads_nothing_and_reports_failure(tmp_path: Path) -> None:
-    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker="exit 1")
-    assert [call.split()[0] for call in calls] == ["curl", "docker", "curl"]
+def test_a_hold_still_exports_and_uploads_then_reports_failure(tmp_path: Path) -> None:
+    """A `tracker delete` made by hand during a hold must still reach the bucket."""
+    docker = 'case "$*" in *deletions-run*) exit 1 ;; esac'
+    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker=docker)
+    assert any(call.endswith("deletions-export /deletions/deleted-ids.txt") for call in calls)
+    assert uploaded == "5\n"
+    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
+
+
+def test_a_failed_export_uploads_nothing_and_reports_failure(tmp_path: Path) -> None:
+    docker = 'case "$*" in *deletions-export*) exit 1 ;; esac'
+    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker=docker)
+    assert not any(call.startswith("rclone") for call in calls)
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
     assert uploaded == ""
 

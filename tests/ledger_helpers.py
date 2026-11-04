@@ -3,8 +3,10 @@
 import uuid
 from datetime import date
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from tracker.ledger.deletions import DeletionRun, run_confirmed_deletions
 from tracker.ledger.entries import WrittenEntry, write_entry
 from tracker.ledger.people import create_person, record_consent
 from tracker.ledger.scope import person_transaction
@@ -36,3 +38,15 @@ async def add_entry(
         written = await write_entry(scope, f"wamid.{uuid.uuid4().hex}", entry, occurred_on)
     assert written is not None
     return written
+
+
+async def quiet_the_deletion_window(owner_engine: AsyncEngine) -> None:
+    """Moves earlier tests' deletions out of the owner job's 24-hour window, as on a quiet day."""
+    async with owner_engine.begin() as connection:
+        await connection.execute(text("UPDATE deleted_person SET deleted_at = deleted_at - interval '2 days'"))
+
+
+async def run_the_deletion_job(owner_engine: AsyncEngine) -> DeletionRun:
+    """The owner job on a quiet day, so other tests' deletions can't cause a hold."""
+    await quiet_the_deletion_window(owner_engine)
+    return await run_confirmed_deletions(owner_engine)

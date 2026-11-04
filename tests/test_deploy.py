@@ -226,6 +226,7 @@ def test_the_runbook_names_every_server_check() -> None:
         "export_deletions.sh",
         "deletions-run",
         "tracker deletion-cancel <id>",
+        "DELETE FROM deleted_person WHERE person_id = <id>",
         "install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions",
         "DELETIONS_HEALTHCHECK_URL",
         "probe",

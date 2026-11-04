@@ -12,6 +12,7 @@ A deletion made after the last copy and before a restore is the one gap: copy of
 
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
@@ -108,9 +109,11 @@ async def reapply_deletions(owner_engine: AsyncEngine, path: Path, *, is_empty_o
     return reapplied
 
 
-# Real people rarely leave together. More confirmed at once looks like a taken-over app
-# confirming for others, so the job deletes none of them and Arthur checks (M1, ADR-023).
-MAX_DELETIONS_PER_RUN: Final = 2
+# Real people rarely leave together. More deletions in a day than this looks like a
+# taken-over app confirming for others, so the job deletes none and Arthur checks (M1,
+# ADR-023). The day counts every deletion: this job's, `tracker delete` and a reapply.
+MAX_DELETIONS_PER_DAY: Final = 2
+DELETION_WINDOW: Final = timedelta(hours=24)
 
 
 @dataclass(frozen=True)
@@ -120,13 +123,20 @@ class DeletionRun:
 
 
 async def run_confirmed_deletions(owner_engine: AsyncEngine) -> DeletionRun:
-    """Deletes everyone who confirmed `hapus semua`, unless more are waiting than the cap."""
+    """Deletes everyone who confirmed `hapus semua`, unless that makes more than the cap in a day.
+
+    Counting the day, not the run, stops a taken-over app spreading its confirmations out.
+    """
     async with owner_engine.connect() as connection:
         rows = await connection.execute(
             text("SELECT id FROM person WHERE deletion_confirmed_at IS NOT NULL ORDER BY id")
         )
         waiting = [int(row.id) for row in rows]
-    if len(waiting) > MAX_DELETIONS_PER_RUN:
+        deleted_lately = await connection.scalar(
+            text("SELECT count(*) FROM deleted_person WHERE deleted_at > now() - CAST(:window AS interval)"),
+            {"window": DELETION_WINDOW},
+        )
+    if len(waiting) + int(deleted_lately or 0) > MAX_DELETIONS_PER_DAY:
         return DeletionRun(deleted=[], held=waiting)
     for person_id in waiting:
         await delete_person(owner_engine, person_id)
