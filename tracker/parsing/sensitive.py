@@ -38,11 +38,14 @@ _DIGIT_RUN: Final = re.compile(
     rf"[0-9]{{3,6}}(?:(?:[ ]|{_PUNCTUATION_GAP})[0-9]{{3,6}}){{2,}}|[0-9]+(?:{_PUNCTUATION_GAP}[0-9]+)*"
 )
 _ACCOUNT_WORD: Final = re.compile(r"\b(?:rekening|rek|norek|kartu|ktp|nik|cvv|pin)\b")
-# A PIN or CVV is short, so a number of 3 or more digits counts after the word, "pinnya"
-# or "cvvnya", even with up to two words between ("pin atm 0123"). "pinjam" isn't "pin",
-# and a number with a unit glued on, "pin 150rb", is a price for a pin badge.
+# A number in thousands groups right after one of these reads like an amount, so it
+# would sit in a question as one: "tf ke rek 123.456.789". Checked before amounts go.
+_GROUPED_NUMBER_AFTER_ACCOUNT_WORD: Final = re.compile(r"\b(?:rekening|rek|norek|kartu)\b[^0-9a-z]{0,3}([0-9][0-9.,]*)")
+# A PIN, CVV or one-time code is short, so a number of 3 or more digits counts after the
+# word, "pinnya" too, even with up to three words between ("pin atm bca saya 0123").
+# "pinjam" isn't "pin", and a number with a unit glued on, "pin 150rb", is a price.
 _SECRET_CODE: Final = re.compile(
-    r"\b(?:pin|cvv)(?:nya)?\b(?:[^0-9a-z]+[a-z]+){0,2}[^0-9a-z]{0,3}[0-9]{3,}(?![0-9]*[a-z])"
+    r"\b(?:m?pin|cvv|otp|sandi|password)(?:nya)?\b(?:[^0-9a-z]+[a-z]+){0,3}[^0-9a-z]{0,3}[0-9]{3,}(?![0-9]*[a-z])"
 )
 # In a description: digits of any script, joined across up to three characters that
 # aren't letters or digits. The amounts are already gone, so joining across spaces is safe.
@@ -50,11 +53,18 @@ _NUMBER_IN_TEXT: Final = re.compile(r"\d+(?:(?:[^\w]|_){1,3}\d+)*")
 
 
 def _digit_view(text: str) -> str:
-    """The text cleaned as the parser sees it, with every digit made 0-9 and amounts in groups taken out."""
+    """The text cleaned as the parser sees it, with every digit made 0-9."""
     characters: list[str] = []
     for character in clean_text(text):
         characters.append(str(unicodedata.decimal(character)) if character.isdecimal() else character)
-    return _AMOUNT_IN_GROUPS.sub(" x ", "".join(characters))
+    return "".join(characters)
+
+
+def _has_grouped_account_number(view: str) -> bool:
+    for match in _GROUPED_NUMBER_AFTER_ACCOUNT_WORD.finditer(view):
+        if len(re.sub("[^0-9]", "", match.group(1))) >= MIN_ACCOUNT_DIGITS:
+            return True
+    return False
 
 
 def _passes_luhn(digits: str) -> bool:
@@ -78,10 +88,10 @@ def _is_sensitive_number(digits: str, has_account_word: bool) -> bool:
 
 def looks_sensitive(text: str) -> bool:
     view = _digit_view(text)
-    if _SECRET_CODE.search(view):
+    if _SECRET_CODE.search(view) or _has_grouped_account_number(view):
         return True
     has_account_word = _ACCOUNT_WORD.search(view) is not None
-    for run in _DIGIT_RUN.findall(view):
+    for run in _DIGIT_RUN.findall(_AMOUNT_IN_GROUPS.sub(" x ", view)):
         if _is_sensitive_number(re.sub("[^0-9]", "", run), has_account_word):
             return True
     return False
@@ -95,5 +105,12 @@ def _hide_if_long(number: re.Match[str]) -> str:
 
 
 def hide_long_numbers(description: str) -> str:
-    """Replaces any long number, however it's grouped, and any non-0-9 digit with "#" (PR1)."""
-    return _NUMBER_IN_TEXT.sub(_hide_if_long, description)
+    """Replaces any long number, however it's grouped, and any non-0-9 digit with "#" (PR1).
+
+    The backstop doesn't depend on separators at all: if 8 or more digits are left in the
+    description, split by anything ("0812 o 0000 o 0000"), every number goes.
+    """
+    hidden = _NUMBER_IN_TEXT.sub(_hide_if_long, description)
+    if sum(character.isdecimal() for character in hidden) >= MIN_HIDDEN_DIGITS:
+        return re.sub(r"\d+", "#", hidden)
+    return hidden

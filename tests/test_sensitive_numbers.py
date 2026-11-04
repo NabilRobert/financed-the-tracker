@@ -79,6 +79,11 @@ def test_an_account_number_written_in_groups_is_caught(message: str) -> None:
         "tarik 500rb pin ke 0123",
         "tarik 500rb pinnya 0123",
         "beli 50rb cvv nya 012",
+        "tarik 500rb pin atm bca saya 0123",
+        "tf 50rb mpin 482913",
+        "kode otp 482913",
+        "kata sandi 482913",
+        "password 4829",
     ],
 )
 def test_a_number_right_after_pin_or_cvv_is_caught(message: str) -> None:
@@ -110,6 +115,10 @@ def test_amounts_in_thousands_groups_are_not_mistaken_for_a_number_to_hide(messa
         ("pulsa 0812 0000 0000 50rb", "pulsa #"),
         ("pulsa 0812 - 0000 - 0000 50rb", "pulsa #"),
         ("pulsa 0812:0000:0000 50rb", "pulsa #"),
+        ("pulsa 0812 -- 0000 -- 0000 50rb", "pulsa # -- # -- #"),
+        ("pulsa 0812 ... 0000 ... 0000 50rb", "pulsa # ... # ... #"),
+        ("pulsa 0812 o 0000 o 0000 50rb", "pulsa # o # o #"),
+        ("tgl 25 pulsa 0812 o 0000 o 0000 50rb", "tgl # pulsa # o # o #"),
     ],
 )
 def test_a_long_number_in_any_grouping_is_kept_out_of_the_description(message: str, description: str) -> None:
@@ -122,6 +131,18 @@ def test_digits_from_another_script_are_kept_out_of_the_description() -> None:
     parsed = parse_message("kopi \uff12\uff15 25rb")
     assert isinstance(parsed, AmbiguousEntry)
     assert parsed.description == "kopi #"
+
+
+@pytest.mark.parametrize("message", ["tf ke rek 123.456.789", "tf ke norek: 12.345.678", "kartu 1.234.567.890"])
+def test_a_grouped_number_right_after_an_account_word_is_caught(message: str) -> None:
+    """It reads like an amount, so without this it would sit in a question as one (R7)."""
+    assert looks_sensitive(message)
+
+
+def test_a_phone_number_in_groups_beside_a_bare_price_is_refused() -> None:
+    """The groups join with the price into a card-length number. Safe: "50rb" goes through."""
+    assert looks_sensitive("pulsa 0812 3456 7890 50000")
+    assert not looks_sensitive("pulsa 0812 3456 7890 50rb")
 
 
 def test_a_short_number_stays_in_the_description() -> None:

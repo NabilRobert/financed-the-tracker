@@ -59,8 +59,10 @@ only the newest entry, so repeating it can't reach an older one.
 list separators: any short run of characters that aren't letters or digits (`.`, ` - `,
 `:`, `|`...) joins two groups of digits, and digits from any script count. Amounts like
 `1.500.000`, which never start with a zero, are taken out first. A number of three or more
-digits after `pin` or `cvv`, even with two words between, counts too. As a second line,
-`hide_long_numbers` turns any number of 8 or more digits in a description into `#`.
+digits after `pin`, `mpin`, `cvv`, `otp`, `sandi` or `password`, even with three words
+between, counts too, and so does a grouped number right after `rek` or `kartu`. As a second
+line, `hide_long_numbers` turns any number of 8 or more digits in a description into `#`,
+and if 8 or more digits are left however they're split, every number goes.
 
 **Leaving** is in `tracker/channel/leaving.py`. `ekspor` sends a CSV of the person's own
 records. `hapus data saya` asks first, and `hapus semua` within ten minutes runs
