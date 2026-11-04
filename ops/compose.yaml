@@ -95,6 +95,10 @@ services:
       - "host.docker.internal:host-gateway"
     entrypoint: ["tracker"]
     network_mode: bridge
+    # The deletion list (PR7). Outside every backup, and owned by 10001 with mode 700,
+    # since the image runs as that user. export_deletions.sh copies it off the server.
+    volumes:
+      - ./deletions:/deletions
 
 networks:
   tracker: {}

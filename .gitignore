@@ -13,6 +13,7 @@ HANDOVER*.md
 .sessions/
 ops/waha/sessions/
 ops/waha-sessions/
+ops/deletions/
 
 # Database dumps, logs and real messages
 *.dump

@@ -1,4 +1,4 @@
-"""Slice 5's local half: the image, the compose file, the backup and deletions surviving a restore.
+"""Slice 5's local half: the image, the compose file and the backup. Deletions are in test_deletions.py.
 
 The server half (probes, a restore drill, permissions) is in docs/runbook-deploy.md, and
 each of its checks is a line of the real-data gate.
@@ -6,19 +6,12 @@ each of its checks is a line of the real-data gate.
 
 import logging
 import re
-import stat
 from pathlib import Path
 
 import pytest
-from conftest import Bot, database_url
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
-from typer.testing import CliRunner
+from conftest import Bot
+from ops_scripts import HEALTHCHECK_URL, run_with_stubs
 
-from tracker.cli import OWNER_URL_ENV
-from tracker.cli import app as cli_app
-from tracker.ledger.deletions import DeletionListError, export_deleted_ids, read_deleted_ids, reapply_deletions
-from tracker.ledger.people import create_person
 from tracker.ledger.summaries import today_in_jakarta
 from tracker.serve import DEFAULT_BIND_HOST, bind_host, configure_logging
 
@@ -27,7 +20,6 @@ DOCKERFILE = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
 COMPOSE = (REPO_ROOT / "ops" / "compose.yaml").read_text(encoding="utf-8")
 BACKUP_SCRIPT = (REPO_ROOT / "ops" / "backup" / "backup_tracker.sh").read_text(encoding="utf-8")
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}")
-runner = CliRunner()
 
 
 def _service(name: str) -> str:
@@ -196,91 +188,24 @@ def test_the_backup_keeps_the_period_the_notice_states() -> None:
     assert "paling lama 14 hari" in CONSENT_NOTICE
 
 
+def test_the_backup_uploads_prunes_then_reports_success(tmp_path: Path) -> None:
+    stubs = {"pg_dump": 0, "age": 0, "rclone": 0, "curl": 0}
+    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
+    assert calls[0].endswith(f"{HEALTHCHECK_URL}/start")
+    assert calls[-1].endswith(HEALTHCHECK_URL)
+    assert any(call.startswith("rclone rcat :s3:example-bucket/tracker/tracker-") for call in calls)
+    assert any(call.startswith("rclone lsf :s3:example-bucket/tracker ") for call in calls)
+
+
+def test_a_failed_dump_reports_failure(tmp_path: Path) -> None:
+    stubs = {"pg_dump": 1, "age": 0, "rclone": 0, "curl": 0}
+    calls = run_with_stubs(REPO_ROOT / "ops" / "backup" / "backup_tracker.sh", tmp_path, stubs)
+    assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
+    assert not any(call.startswith("rclone lsf") for call in calls)
+
+
 def test_whatsapps_session_files_are_not_backed_up() -> None:
     assert ".sessions" not in BACKUP_SCRIPT.replace("WAHA's session files", "")
-
-
-# PR7, T27: deletions survive a restore.
-async def _restore_person(owner_engine: AsyncEngine, person_id: int, whatsapp_id: str) -> None:
-    """What restoring an older backup does: the person is back, and the list forgot them."""
-    async with owner_engine.begin() as connection:
-        await connection.execute(
-            text("INSERT INTO person (id, whatsapp_id) OVERRIDING SYSTEM VALUE VALUES (:id, :w)"),
-            {"id": person_id, "w": whatsapp_id},
-        )
-        await connection.execute(
-            text("INSERT INTO category (person_id, name, direction) VALUES (:id, 'Makan', 'spending')"),
-            {"id": person_id},
-        )
-        await connection.execute(text("DELETE FROM deleted_person WHERE person_id = :id"), {"id": person_id})
-
-
-async def _person_exists(owner_engine: AsyncEngine, person_id: int) -> bool:
-    async with owner_engine.connect() as connection:
-        return await connection.scalar(text("SELECT count(*) FROM person WHERE id = :id"), {"id": person_id}) == 1
-
-
-async def test_a_deletion_is_reapplied_after_a_restore(
-    owner_engine: AsyncEngine, bot: Bot, member: str, tmp_path: Path
-) -> None:
-    async with owner_engine.connect() as connection:
-        person_id = int(
-            await connection.scalar(text("SELECT id FROM person WHERE whatsapp_id = :w"), {"w": member}) or 0
-        )
-    await bot.say(member, "hapus data saya")
-    await bot.say(member, "hapus semua")
-    deleted_list = tmp_path / "deleted-ids.txt"
-    await export_deleted_ids(owner_engine, deleted_list)
-
-    await _restore_person(owner_engine, person_id, member)
-    assert await _person_exists(owner_engine, person_id)
-    assert await reapply_deletions(owner_engine, deleted_list) == 1
-    assert not await _person_exists(owner_engine, person_id)
-
-
-async def test_reapplying_twice_changes_nothing_the_second_time(owner_engine: AsyncEngine, tmp_path: Path) -> None:
-    person_id = await create_person(owner_engine, whatsapp_id="reapply@lid")
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text(f"{person_id}\n", encoding="utf-8")
-    assert await reapply_deletions(owner_engine, deleted_list) == 1
-    assert await reapply_deletions(owner_engine, deleted_list) == 0
-
-
-async def test_the_export_keeps_ids_a_restore_has_forgotten(owner_engine: AsyncEngine, tmp_path: Path) -> None:
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text("999999999\n", encoding="utf-8")
-    await export_deleted_ids(owner_engine, deleted_list)
-    assert 999_999_999 in read_deleted_ids(deleted_list)
-    assert stat.S_IMODE(deleted_list.stat().st_mode) == 0o600
-
-
-def test_blank_lines_in_the_list_are_ignored(tmp_path: Path) -> None:
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text("5\n\n  \n7\n", encoding="utf-8")
-    assert read_deleted_ids(deleted_list) == {5, 7}
-
-
-def test_a_missing_list_means_nothing_to_reapply(tmp_path: Path) -> None:
-    assert read_deleted_ids(tmp_path / "none.txt") == set()
-
-
-@pytest.mark.parametrize("line", ["abc", "-1", "1.5", "１", "٣"])
-def test_a_list_with_a_line_that_is_not_an_id_is_refused(tmp_path: Path, line: str) -> None:
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text(f"5\n{line}\n", encoding="utf-8")
-    with pytest.raises(DeletionListError, match="line 2"):
-        read_deleted_ids(deleted_list)
-
-
-def test_the_cli_exports_and_reapplies(database_name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv(OWNER_URL_ENV, database_url("tracker_owner", database_name))
-    deleted_list = tmp_path / "deleted-ids.txt"
-    assert runner.invoke(cli_app, ["deletions-export", str(deleted_list)]).exit_code == 0
-    assert runner.invoke(cli_app, ["deletions-reapply", str(deleted_list)]).exit_code == 0
-    deleted_list.write_text("not an id\n", encoding="utf-8")
-    result = runner.invoke(cli_app, ["deletions-reapply", str(deleted_list)])
-    assert result.exit_code == 1
-    assert "isn't a person id" in result.stderr
 
 
 async def test_each_message_logs_a_content_free_heartbeat(
@@ -298,6 +223,9 @@ def test_the_runbook_names_every_server_check() -> None:
         "deletions-reapply",
         "deletions-export",
         "backup_tracker.sh",
+        "export_deletions.sh",
+        "install -d -m 700 -o 10001 -g 10001 <repo>/ops/deletions",
+        "DELETIONS_HEALTHCHECK_URL",
         "probe",
         "sentinel",
         "QR",
