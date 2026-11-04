@@ -121,6 +121,7 @@ people's financial records on this channel? It stays open, and still gates real 
 | T41 | The bot is used for bulk or unsolicited messages, which also speeds a ban | Reply only: the send path is reached only from an inbound message from a known, consenting person. No broadcast exists | `test_nothing_sends_except_a_reply_to_an_inbound_message` | 3 | Done |
 | T42 | The bot talks to itself in a loop, or replies in a group | Messages from its own account, groups, broadcasts and channels are dropped | `test_the_bots_own_messages_are_ignored`, `test_only_direct_chats_reach_the_bot` | 3 | Done |
 | T43 | A WhatsApp change breaks WAHA, so messages silently stop | The session's status webhook logs and alerts a stopped session (E3). The dead-man alert covers the rest | `test_a_stopped_session_is_logged`, then slice 5's alert | 3, 5 | Part done |
+| T44 | Anyone sends a photo or file, of a card or a statement, or a large video to fill WAHA's memory. WAHA's default decrypts every one, strangers' included, before the webhook (found by the independent review) | WAHA's media download is off for events and the API, so only the text reaches anything. The bot never reads media | `test_waha_never_downloads_photos_or_files`. Checked in the pinned image's code that `"false"` skips the download | 3 | Done |
 
 ### Backups
 

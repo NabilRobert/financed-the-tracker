@@ -150,6 +150,12 @@ def test_waha_never_generates_a_password_to_print() -> None:
         assert f"{name}: ${{WAHA_UNUSED_PANEL_PASSWORD:?" in waha
 
 
+@pytest.mark.parametrize("name", ["WHATSAPP_DOWNLOAD_MEDIA", "WAHA_EVENTS_DOWNLOAD_MEDIA", "WAHA_API_DOWNLOAD_MEDIA"])
+def test_waha_never_downloads_photos_or_files(name: str) -> None:
+    """WAHA's default is to decrypt every photo and file, strangers' included, before the webhook."""
+    assert f'{name}: "false"' in _service("waha")
+
+
 def test_waha_calls_the_app_over_the_private_network() -> None:
     session = (REPO_ROOT / "ops" / "waha" / "session.example.json").read_text(encoding="utf-8")
     assert '"url": "http://app:8099/webhook"' in session

@@ -62,6 +62,12 @@ services:
       WHATSAPP_SWAGGER_USERNAME: disabled
       WHATSAPP_SWAGGER_PASSWORD: ${WAHA_UNUSED_PANEL_PASSWORD:?set a random value nobody uses}
       WAHA_LOG_LEVEL: warn
+      # WAHA's default decrypts every photo and file, strangers' included, into /tmp and serves
+      # it at /api/files before the webhook runs. The bot reads text only. The first line is the
+      # default the other two fall back to; they're set too so nothing relies on the fallback.
+      WHATSAPP_DOWNLOAD_MEDIA: "false"
+      WAHA_EVENTS_DOWNLOAD_MEDIA: "false"
+      WAHA_API_DOWNLOAD_MEDIA: "false"
     volumes:
       - ./waha-sessions:/app/.sessions
     # The image runs as root by default. Checked locally: it works as this user, with a
