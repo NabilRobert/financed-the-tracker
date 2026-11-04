@@ -79,25 +79,42 @@ fixtures, and fix the adapter before going further.
 
 ## 6. Backups and the restore drill
 
+Before the first run, make the deletion list's folder, owned by the image's user:
+
+```bash
+install -d -m 700 -o 10001 -g 10001 <repo>/ops/deletions
+```
+
 Cron, as the owner account:
 
 ```bash
-17 3 * * *  TRACKER_BACKUP_ENV=<backup settings file> <repo>/ops/backup/backup_tracker.sh
-*/15 * * * * docker compose -f <repo>/ops/compose.yaml --profile tools run --rm cli deletions-export /deletions/deleted-ids.txt
-20 4 * * *  docker compose -f <repo>/ops/compose.yaml --profile tools run --rm cli purge
+17 3 * * *   TRACKER_BACKUP_ENV=<backup settings file> <repo>/ops/backup/backup_tracker.sh
+*/15 * * * * TRACKER_BACKUP_ENV=<backup settings file> <repo>/ops/backup/export_deletions.sh
+20 4 * * *   docker compose -f <repo>/ops/compose.yaml --profile tools run --rm cli purge
 ```
 
-`deleted-ids.txt` lives outside anything a backup covers, because restoring an old backup
-must not also restore an old list. Mount its folder into the `cli` container for these runs.
+`export_deletions.sh` runs `deletions-export` into `ops/deletions/deleted-ids.txt`, which
+`compose.yaml` mounts into the `cli` container, then copies the file to the bucket under
+`tracker-deletions/`. The list must outlive both an old backup and the server itself, so:
+- `tracker-deletions/` sits beside `tracker/`, where the backup prunes, never inside it;
+- if a lifecycle rule ever does the 14-day expiry, it must cover `tracker/` only;
+- the settings file needs `DELETIONS_HEALTHCHECK_URL`, a second heartbeat check that runs
+  every 15 minutes, so a failing copy alerts.
 
 The drill, timed, with WAHA stopped (`docker compose stop waha`):
 
 1. Copy the newest `tracker-*.dump.age` from S3 to a machine that holds the age private
    key. Decrypt it there, never on the server.
-2. Restore into an empty database, then run `deletions-reapply` with the current list.
-3. Compare row counts with the live database, and check that every id in the list is gone.
-4. Run `tracker export` for one person: it must work with WAHA stopped.
-5. Record how long it took. Delete the restored copy.
+2. Restore into an empty database.
+3. **Before anything else, and before anyone is added**, run `deletions-reapply` with every
+   id either copy holds: `sort -un` the server's `ops/deletions/deleted-ids.txt` and the
+   bucket's `tracker-deletions/deleted-ids.txt` into one file. If the server is gone, use the
+   bucket's alone. It refuses a missing or empty list; `--empty-ok` is only for a database
+   nobody has ever left. It also moves the id counter past every listed id, because the
+   restore set it back.
+4. Compare row counts with the live database, and check that every id in the list is gone.
+5. Run `tracker export` for one person: it must work with WAHA stopped.
+6. Record how long it took. Delete the restored copy.
 
 ## 7. Secret rotation, rehearsed once
 

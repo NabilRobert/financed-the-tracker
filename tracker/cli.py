@@ -94,10 +94,13 @@ def deletions_export(path: Path) -> None:
 
 
 @app.command("deletions-reapply")
-def deletions_reapply(path: Path) -> None:
-    """After any restore: delete again everyone the restore brought back."""
+def deletions_reapply(
+    path: Path,
+    empty_ok: Annotated[bool, typer.Option("--empty-ok", help="Nobody has ever been deleted.")] = False,
+) -> None:
+    """Right after any restore, before anyone is added: delete again everyone it brought back."""
     try:
-        reapplied = _run_as_owner(lambda engine: reapply_deletions(engine, path))
+        reapplied = _run_as_owner(lambda engine: reapply_deletions(engine, path, is_empty_ok=empty_ok))
     except DeletionListError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None

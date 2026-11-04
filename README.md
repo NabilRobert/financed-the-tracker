@@ -62,7 +62,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `tracker/cli.py` | Arthur's commands: add, suspend, resume, export, delete and purge |
 | `tracker/serve.py` | Runs the server |
 | `ops/compose.yaml`, `Dockerfile` | The two containers, with nothing public |
-| `ops/backup/` | The nightly encrypted backup |
+| `ops/backup/` | The nightly encrypted backup, and the deletion list copied off the server |
 | `ops/waha/` | WAHA's session config |
 | `docs/runbook-deploy.md` | Deploying, and checking the gate on the server |
 | `tracker/ledger/scope.py` | `person_transaction`: the one way in, limited to one person |

@@ -2,8 +2,10 @@
 
 `deleted_person` lives in the database, so restoring an older backup would bring back both
 the person and a list that never heard of their deletion. So the ids are also copied, by
-cron, to a file on the server that backups don't touch, and re-applied after any restore.
-The file holds ids and nothing else, so it says nothing about anyone.
+cron, to a file on the server that backups don't touch, and from there to the backup
+bucket, since losing the server is the likeliest reason to restore
+(ops/backup/export_deletions.sh). The list is re-applied after any restore. It holds ids
+and nothing else, so it says nothing about anyone.
 
 A deletion made after the last copy and before a restore is the one gap: copy often.
 """
@@ -58,10 +60,45 @@ async def export_deleted_ids(owner_engine: AsyncEngine, path: Path) -> int:
     return len(ids)
 
 
-async def reapply_deletions(owner_engine: AsyncEngine, path: Path) -> int:
-    """Deletes every listed person a restore brought back. Returns how many were deleted."""
+async def _keep_ids_retired(owner_engine: AsyncEngine, ids: set[int]) -> None:
+    """Records the ids as deleted again, and moves the id counter past every one of them.
+
+    pg_restore sets the counter back to where the backup was. Without this, the next person
+    added could get a deleted person's id, and the next reapply would delete them.
+    """
+    async with owner_engine.begin() as connection:
+        await connection.execute(
+            text("""
+                INSERT INTO deleted_person (person_id) SELECT unnest(CAST(:ids AS bigint[]))
+                ON CONFLICT (person_id) DO NOTHING
+            """),
+            {"ids": sorted(ids)},
+        )
+        await connection.execute(
+            text("""
+                SELECT setval(pg_get_serial_sequence('person', 'id'),
+                              GREATEST(:highest_id, (SELECT coalesce(max(id), 0) FROM person)))
+            """),
+            {"highest_id": max(ids)},
+        )
+
+
+async def reapply_deletions(owner_engine: AsyncEngine, path: Path, *, is_empty_ok: bool = False) -> int:
+    """Deletes every listed person a restore brought back. Returns how many were deleted.
+
+    A missing or empty list is an error, because reading it as "nobody" would quietly bring
+    back everyone who left. `is_empty_ok` is for a database nobody has ever left.
+    """
+    if not path.exists():
+        raise DeletionListError(f"{path} doesn't exist: copy the list from the server or the backup bucket first")
+    ids = read_deleted_ids(path)
+    if not ids:
+        if is_empty_ok:
+            return 0
+        raise DeletionListError(f"{path} is empty: if nobody has ever been deleted, pass --empty-ok")
     reapplied = 0
-    for person_id in sorted(read_deleted_ids(path)):
+    for person_id in sorted(ids):
         if await delete_person(owner_engine, person_id):
             reapplied += 1
+    await _keep_ids_retired(owner_engine, ids)
     return reapplied
