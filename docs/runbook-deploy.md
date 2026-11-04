@@ -87,7 +87,9 @@ The setgid bit (the `2`) gives every new file that group, and the app writes it 
 install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions
 ```
 
-Turn on versioning for the bucket once, so an overwritten copy of the list can be got back.
+**Leave the bucket's versioning off.** With it on, the backup's pruning only adds a delete
+marker, and every pruned dump stays as an old version, which breaks the notice's "paling
+lama 14 hari". The deletion list doesn't need it: its upload only ever adds ids.
 
 Cron, as the owner account:
 
@@ -134,6 +136,8 @@ The drill, timed, with WAHA stopped (`docker compose stop waha`):
    nobody has ever left. It also moves the id counter past every listed id, because the
    restore set it back.
 4. Compare row counts with the live database, and check that every id in the list is gone.
+   Check the 14-day promise too: `rclone lsf --s3-versions :s3:<bucket>/tracker` lists no
+   dump older than 15 days, and no old versions at all.
 5. Run `tracker export` for one person: it must work with WAHA stopped.
 6. Record how long it took. Delete the restored copy.
 
