@@ -9,38 +9,30 @@
 # both together.
 #
 # Run by cron as the owner account. Every secret comes from TRACKER_BACKUP_ENV at run time.
+# It also runs the nightly purge of expired records, so retention shares the heartbeat.
+# Only files named tracker-*.dump.age in tracker/ are pruned, so the deletion list in
+# tracker-deletions/ (export_deletions.sh) is never touched.
 # WAHA's session files are deliberately not backed up: they are the WhatsApp account (T35).
 set -euo pipefail
 umask 077
 
-ENV_FILE="${TRACKER_BACKUP_ENV:?set TRACKER_BACKUP_ENV to the backup settings file}"
+source "$(dirname "$0")/settings.sh"
+OPS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 KEEP=14
 PREFIX="tracker"
 
-require() {
-  local value
-  value="$(grep "^$1=" "$ENV_FILE" | cut -d= -f2- || true)"
-  if [ -z "$value" ]; then echo "backup: $1 is missing from $ENV_FILE" >&2; exit 1; fi
-  printf '%s' "$value"
-}
+start_heartbeat "$(grep '^BACKUP_HEALTHCHECK_URL=' "$ENV_FILE" | cut -d= -f2- || true)"
 
-HC_URL="$(grep '^BACKUP_HEALTHCHECK_URL=' "$ENV_FILE" | cut -d= -f2- || true)"
-ping_hc() {
-  if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL$1" >/dev/null || true; fi
-}
-trap 'rc=$?; if [ "$rc" -ne 0 ]; then ping_hc /fail; fi' EXIT
-ping_hc /start
-
-# Validate everything before dumping anything.
-DB_URL="$(require TRACKER_MIGRATOR_DATABASE_URL | sed -E 's#^postgresql\+[a-z]+://#postgresql://#')"
+# Validate everything before dumping anything. The URL carries no password: pg_dump reads
+# it from a passfile, because any local user can read a command line in `ps` (L1).
+DB_URL="$(require BACKUP_DATABASE_URL)"
+case "$DB_URL" in
+  *://*:*@* | *password=*) echo "backup: BACKUP_DATABASE_URL holds a password: move it to BACKUP_PGPASSFILE" >&2; exit 1 ;;
+esac
+PGPASSFILE="$(require BACKUP_PGPASSFILE)"
+export PGPASSFILE
 AGE_RECIPIENT="$(require AGE_RECIPIENT)"
-S3_BUCKET="$(require S3_BUCKET)"
-export RCLONE_S3_PROVIDER=AWS
-RCLONE_S3_ACCESS_KEY_ID="$(require AWS_ACCESS_KEY_ID)"
-RCLONE_S3_SECRET_ACCESS_KEY="$(require AWS_SECRET_ACCESS_KEY)"
-RCLONE_S3_REGION="$(require S3_REGION)"
-export RCLONE_S3_ACCESS_KEY_ID RCLONE_S3_SECRET_ACCESS_KEY RCLONE_S3_REGION
-export RCLONE_S3_NO_CHECK_BUCKET=true  # The IAM policy has no CreateBucket.
+configure_s3
 REMOTE=":s3:$S3_BUCKET/$PREFIX"
 NAME="$PREFIX-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
 
@@ -51,5 +43,9 @@ pg_dump "$DB_URL" --format=custom | age -r "$AGE_RECIPIENT" | rclone rcat "$REMO
 rclone lsf "$REMOTE" --files-only --include "$PREFIX-*.dump.age" \
   | sort -r | tail -n +$((KEEP + 1)) \
   | xargs -r -I{} rclone deletefile "$REMOTE/{}"
+
+# Retention (PR6) runs here, under this heartbeat, so a purge that stops running alerts.
+# After the backup, so a failing purge never costs a night's backup; the script still fails.
+docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli purge
 
 ping_hc ""

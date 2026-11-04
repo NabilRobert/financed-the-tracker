@@ -2,13 +2,17 @@
 
 `deleted_person` lives in the database, so restoring an older backup would bring back both
 the person and a list that never heard of their deletion. So the ids are also copied, by
-cron, to a file on the server that backups don't touch, and re-applied after any restore.
-The file holds ids and nothing else, so it says nothing about anyone.
+cron, to a file on the server that backups don't touch, and from there to the backup
+bucket, since losing the server is the likeliest reason to restore
+(ops/backup/export_deletions.sh). The list is re-applied after any restore. It holds ids
+and nothing else, so it says nothing about anyone.
 
 A deletion made after the last copy and before a restore is the one gap: copy often.
 """
 
 import os
+from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
@@ -17,7 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.ledger.people import delete_person
 
-OWNER_ONLY_FILE_MODE: Final = 0o600
+# Group-readable: the owner account reads it through the folder's group to copy it off the
+# server (export_deletions.sh), while the container writes it as user 10001. Ids only.
+LIST_FILE_MODE: Final = 0o640
 
 
 class DeletionListError(Exception):
@@ -42,7 +48,8 @@ def read_deleted_ids(path: Path) -> set[int]:
 def _write_ids(path: Path, ids: set[int]) -> None:
     """Writes atomically, so a crash can't leave half a list."""
     partial = path.with_name(f"{path.name}.partial")
-    descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, OWNER_ONLY_FILE_MODE)
+    descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, LIST_FILE_MODE)
+    os.fchmod(descriptor, LIST_FILE_MODE)  # Whatever the umask, or a leftover partial's mode.
     with os.fdopen(descriptor, "w", encoding="utf-8") as file:
         file.writelines(f"{person_id}\n" for person_id in sorted(ids))
     partial.replace(path)
@@ -58,10 +65,92 @@ async def export_deleted_ids(owner_engine: AsyncEngine, path: Path) -> int:
     return len(ids)
 
 
-async def reapply_deletions(owner_engine: AsyncEngine, path: Path) -> int:
-    """Deletes every listed person a restore brought back. Returns how many were deleted."""
+async def _keep_ids_retired(owner_engine: AsyncEngine, ids: set[int]) -> None:
+    """Records the ids as deleted again, and moves the id counter past every one of them.
+
+    pg_restore sets the counter back to where the backup was. Without this, the next person
+    added could get a deleted person's id, and the next reapply would delete them.
+    """
+    async with owner_engine.begin() as connection:
+        await connection.execute(
+            text("""
+                INSERT INTO deleted_person (person_id) SELECT unnest(CAST(:ids AS bigint[]))
+                ON CONFLICT (person_id) DO NOTHING
+            """),
+            {"ids": sorted(ids)},
+        )
+        await connection.execute(
+            text("""
+                SELECT setval(pg_get_serial_sequence('person', 'id'),
+                              GREATEST(:highest_id, (SELECT coalesce(max(id), 0) FROM person)))
+            """),
+            {"highest_id": max(ids)},
+        )
+
+
+async def reapply_deletions(owner_engine: AsyncEngine, path: Path, *, is_empty_ok: bool = False) -> int:
+    """Deletes every listed person a restore brought back. Returns how many were deleted.
+
+    A missing or empty list is an error, because reading it as "nobody" would quietly bring
+    back everyone who left. `is_empty_ok` is for a database nobody has ever left.
+    """
+    if not path.exists():
+        raise DeletionListError(f"{path} doesn't exist: copy the list from the server or the backup bucket first")
+    ids = read_deleted_ids(path)
+    if not ids:
+        if is_empty_ok:
+            return 0
+        raise DeletionListError(f"{path} is empty: if nobody has ever been deleted, pass --empty-ok")
     reapplied = 0
-    for person_id in sorted(read_deleted_ids(path)):
+    for person_id in sorted(ids):
         if await delete_person(owner_engine, person_id):
             reapplied += 1
+    await _keep_ids_retired(owner_engine, ids)
     return reapplied
+
+
+# Real people rarely leave together. More deletions in a day than this looks like a
+# taken-over app confirming for others, so the job deletes none and Arthur checks (M1,
+# ADR-023). The day counts every deletion: this job's, `tracker delete` and a reapply.
+MAX_DELETIONS_PER_DAY: Final = 2
+DELETION_WINDOW: Final = timedelta(hours=24)
+
+
+@dataclass(frozen=True)
+class DeletionRun:
+    deleted: list[int]
+    held: list[int]
+
+
+async def run_confirmed_deletions(owner_engine: AsyncEngine) -> DeletionRun:
+    """Deletes everyone who confirmed `hapus semua`, unless that makes more than the cap in a day.
+
+    Counting the day, not the run, stops a taken-over app spreading its confirmations out.
+    """
+    async with owner_engine.connect() as connection:
+        rows = await connection.execute(
+            text("SELECT id FROM person WHERE deletion_confirmed_at IS NOT NULL ORDER BY id")
+        )
+        waiting = [int(row.id) for row in rows]
+        deleted_lately = await connection.scalar(
+            text("SELECT count(*) FROM deleted_person WHERE deleted_at > now() - CAST(:window AS interval)"),
+            {"window": DELETION_WINDOW},
+        )
+    if len(waiting) + int(deleted_lately or 0) > MAX_DELETIONS_PER_DAY:
+        return DeletionRun(deleted=[], held=waiting)
+    for person_id in waiting:
+        await delete_person(owner_engine, person_id)
+    return DeletionRun(deleted=waiting, held=[])
+
+
+async def cancel_confirmed_deletion(owner_engine: AsyncEngine, person_id: int) -> bool:
+    """Lets a held person back in, for a confirmation they didn't send. False if there was none."""
+    async with owner_engine.begin() as connection:
+        cancelled = await connection.scalar(
+            text("""
+                UPDATE person SET deletion_confirmed_at = NULL, deletion_requested_at = NULL
+                WHERE id = :id AND deletion_confirmed_at IS NOT NULL RETURNING id
+            """),
+            {"id": person_id},
+        )
+    return cancelled is not None

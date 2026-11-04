@@ -9,6 +9,7 @@ from datetime import timedelta
 import httpx
 import pytest
 from conftest import Bot, database_url
+from ledger_helpers import run_the_deletion_job
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -96,15 +97,17 @@ async def test_hapus_data_saya_leaves_zero_rows_for_that_person_alone(
     assert bot.waha.texts[-1] == DELETE_CONFIRM
     assert await rows_left_for(owner_engine, person_id) == before | {"inbound_message": before["inbound_message"] + 1}
     await bot.say(member, "hapus semua")
-
     assert bot.waha.texts[-1] == DELETED
+    await run_the_deletion_job(owner_engine)
+
     assert set((await rows_left_for(owner_engine, person_id)).values()) == {0}
     assert await rows_left_for(owner_engine, other_id) == other_before
 
 
-async def test_a_deleted_person_is_a_stranger_afterwards(bot: Bot, member: str) -> None:
+async def test_a_deleted_person_is_a_stranger_afterwards(owner_engine: AsyncEngine, bot: Bot, member: str) -> None:
     await bot.say(member, "hapus data saya")
     await bot.say(member, "hapus semua")
+    await run_the_deletion_job(owner_engine)
     bot.waha.texts.clear()
     await bot.say(member, "rekap")
     assert bot.waha.texts == []
@@ -114,6 +117,7 @@ async def test_a_deletion_leaves_only_the_id_behind(owner_engine: AsyncEngine, b
     person_id = await person_id_of(owner_engine, member)
     await bot.say(member, "hapus data saya")
     await bot.say(member, "hapus semua")
+    await run_the_deletion_job(owner_engine)
     async with owner_engine.connect() as connection:
         result = await connection.execute(text("SELECT * FROM deleted_person WHERE person_id = :id"), {"id": person_id})
         rows = result.all()
@@ -150,6 +154,7 @@ async def test_a_deletion_request_inside_the_window_still_counts(
         )
     await bot.say(member, "hapus semua")
     assert bot.waha.texts[-1] == DELETED
+    await run_the_deletion_job(owner_engine)
 
 
 @pytest.mark.parametrize("message", ["hapus", "hapus data", "hapus semuanya dong"])
@@ -159,19 +164,19 @@ async def test_a_half_finished_hapus_says_how(owner_engine: AsyncEngine, bot: Bo
     assert await person_id_of(owner_engine, member) is not None
 
 
-async def test_the_delete_function_needs_a_person_in_scope(app_engine: AsyncEngine) -> None:
+async def test_the_delete_function_needs_a_person_in_scope(owner_engine: AsyncEngine) -> None:
     with pytest.raises(DBAPIError, match="no person in scope"):
-        async with app_engine.begin() as connection:
+        async with owner_engine.begin() as connection:
             await connection.execute(text("SELECT tracker_delete_person_in_scope()"))
 
 
 async def test_the_delete_function_reaches_only_the_person_in_scope(
-    owner_engine: AsyncEngine, app_engine: AsyncEngine, bot: Bot, member: str
+    owner_engine: AsyncEngine, bot: Bot, member: str
 ) -> None:
     person_id = await person_id_of(owner_engine, member)
     assert person_id is not None
     other = await create_person(owner_engine, whatsapp_id=new_lid())
-    async with person_transaction(app_engine, other) as scope:
+    async with person_transaction(owner_engine, other) as scope:
         await delete_person_in_scope(scope)
     assert await person_id_of(owner_engine, member) == person_id
     assert bot.waha.texts == []

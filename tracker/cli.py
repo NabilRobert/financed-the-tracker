@@ -10,7 +10,13 @@ import typer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tracker.ledger.deletions import DeletionListError, export_deleted_ids, reapply_deletions
+from tracker.ledger.deletions import (
+    DeletionListError,
+    cancel_confirmed_deletion,
+    export_deleted_ids,
+    reapply_deletions,
+    run_confirmed_deletions,
+)
 from tracker.ledger.engine import create_engine
 from tracker.ledger.export import export_person_csv
 from tracker.ledger.people import create_person, delete_person, set_suspended
@@ -86,6 +92,30 @@ def delete(
     typer.echo("Deleted.")
 
 
+@app.command("deletions-run")
+def deletions_run() -> None:
+    """Delete everyone who confirmed `hapus semua`. Run by export_deletions.sh every 15 minutes."""
+    result = _run_as_owner(run_confirmed_deletions)
+    if result.held:
+        held_ids = " ".join(str(person_id) for person_id in result.held)
+        typer.echo(
+            f"deletions_held count={len(result.held)} ids={held_ids}: more than a real day brings. Check each, "
+            "then `tracker delete ID --yes` or `tracker deletion-cancel ID`.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    typer.echo(f"Deleted {len(result.deleted)} people.")
+
+
+@app.command("deletion-cancel")
+def deletion_cancel(person_id: int) -> None:
+    """After a hold: let a person back in whose deletion they didn't confirm themselves."""
+    if not _run_as_owner(lambda engine: cancel_confirmed_deletion(engine, person_id)):
+        typer.echo(f"Person {person_id} has no confirmed deletion.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Person {person_id} can use the bot again.")
+
+
 @app.command("deletions-export")
 def deletions_export(path: Path) -> None:
     """Copy deleted ids to a file outside the backups. Run it often from cron (PR7)."""
@@ -94,10 +124,13 @@ def deletions_export(path: Path) -> None:
 
 
 @app.command("deletions-reapply")
-def deletions_reapply(path: Path) -> None:
-    """After any restore: delete again everyone the restore brought back."""
+def deletions_reapply(
+    path: Path,
+    empty_ok: Annotated[bool, typer.Option("--empty-ok", help="Nobody has ever been deleted.")] = False,
+) -> None:
+    """Right after any restore, before anyone is added: delete again everyone it brought back."""
     try:
-        reapplied = _run_as_owner(lambda engine: reapply_deletions(engine, path))
+        reapplied = _run_as_owner(lambda engine: reapply_deletions(engine, path, is_empty_ok=empty_ok))
     except DeletionListError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None

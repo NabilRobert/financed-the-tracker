@@ -1,33 +1,26 @@
-"""Slice 5's local half: the image, the compose file, the backup and deletions surviving a restore.
+"""Slice 5's local half: the image and the compose file. The backup and deletions have their own files.
 
 The server half (probes, a restore drill, permissions) is in docs/runbook-deploy.md, and
 each of its checks is a line of the real-data gate.
 """
 
 import logging
+import os
 import re
-import stat
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import Bot, database_url
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
-from typer.testing import CliRunner
+from conftest import Bot
 
-from tracker.cli import OWNER_URL_ENV
-from tracker.cli import app as cli_app
-from tracker.ledger.deletions import DeletionListError, export_deleted_ids, read_deleted_ids, reapply_deletions
-from tracker.ledger.people import create_person
 from tracker.ledger.summaries import today_in_jakarta
 from tracker.serve import DEFAULT_BIND_HOST, bind_host, configure_logging
 
 REPO_ROOT = Path(__file__).parent.parent
 DOCKERFILE = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
 COMPOSE = (REPO_ROOT / "ops" / "compose.yaml").read_text(encoding="utf-8")
-BACKUP_SCRIPT = (REPO_ROOT / "ops" / "backup" / "backup_tracker.sh").read_text(encoding="utf-8")
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}")
-runner = CliRunner()
 
 
 def _service(name: str) -> str:
@@ -127,6 +120,40 @@ def test_the_app_container_is_locked_down() -> None:
         assert setting in app
 
 
+def test_the_env_example_lists_every_variable_compose_requires() -> None:
+    """Cron runs compose with an empty environment, so every value must come from ops/.env (R16)."""
+    required = set(re.findall(r"\$\{([A-Z0-9_]+):\?", COMPOSE))
+    example = (REPO_ROOT / "ops" / ".env.example").read_text(encoding="utf-8")
+    listed = set(re.findall(r"^([A-Z0-9_]+)=", example, flags=re.MULTILINE))
+    assert listed == required
+
+
+def test_compose_works_from_crons_empty_environment(tmp_path: Path) -> None:
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("docker isn't installed here")
+    ops = tmp_path / "ops"
+    ops.mkdir()
+    shutil.copy(REPO_ROOT / "ops" / "compose.yaml", ops / "compose.yaml")
+    for env_file in (".env.app", ".env.owner"):
+        (ops / env_file).touch()
+    sample = {
+        "TRACKER_VERSION": "test",
+        "TRACKER_NETWORK_SUBNET": "10.99.0.0/24",
+        "WAHA_API_KEY_SHA512": "sha512:00",
+        "WAHA_UNUSED_PANEL_PASSWORD": "unused",
+    }
+    (ops / ".env").write_text("".join(f"{key}={value}\n" for key, value in sample.items()), encoding="utf-8")
+    command = [docker, "compose", "-f", str(ops / "compose.yaml"), "--profile", "tools", "config", "--quiet"]
+    result = subprocess.run(command, env={"PATH": os.environ["PATH"]}, capture_output=True, text=True, check=False)  # noqa: S603 - fixed arguments.
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_apps_network_is_pinned_so_postgres_can_allow_it_alone() -> None:
+    networks = COMPOSE[COMPOSE.index("\nnetworks:") :]
+    assert "- subnet: ${TRACKER_NETWORK_SUBNET:?" in networks
+
+
 def test_waha_is_pinned_and_private() -> None:
     waha = _service("waha")
     assert DIGEST.search(waha)
@@ -148,6 +175,12 @@ def test_waha_never_generates_a_password_to_print() -> None:
     waha = _service("waha")
     for name in ("WAHA_DASHBOARD_PASSWORD", "WHATSAPP_SWAGGER_PASSWORD"):
         assert f"{name}: ${{WAHA_UNUSED_PANEL_PASSWORD:?" in waha
+
+
+@pytest.mark.parametrize("name", ["WHATSAPP_DOWNLOAD_MEDIA", "WAHA_EVENTS_DOWNLOAD_MEDIA", "WAHA_API_DOWNLOAD_MEDIA"])
+def test_waha_never_downloads_photos_or_files(name: str) -> None:
+    """WAHA's default is to decrypt every photo and file, strangers' included, before the webhook."""
+    assert f'{name}: "false"' in _service("waha")
 
 
 def test_waha_calls_the_app_over_the_private_network() -> None:
@@ -177,112 +210,6 @@ def test_the_app_binds_to_loopback_unless_told_otherwise() -> None:
     assert bind_host({}) == DEFAULT_BIND_HOST == "127.0.0.1"
 
 
-# The backup.
-def test_nothing_readable_touches_the_disk_during_a_backup() -> None:
-    assert '| age -r "$AGE_RECIPIENT" | rclone rcat' in BACKUP_SCRIPT
-    assert not re.search(r"--file[= ]", BACKUP_SCRIPT)
-    assert "set -euo pipefail" in BACKUP_SCRIPT
-
-
-def test_the_backup_key_is_configuration_not_code() -> None:
-    assert not re.search(r"age1[0-9a-z]{20,}", BACKUP_SCRIPT)
-    assert 'AGE_RECIPIENT="$(require AGE_RECIPIENT)"' in BACKUP_SCRIPT
-
-
-def test_the_backup_keeps_the_period_the_notice_states() -> None:
-    from tracker.channel.replies import CONSENT_NOTICE
-
-    assert "KEEP=14" in BACKUP_SCRIPT
-    assert "paling lama 14 hari" in CONSENT_NOTICE
-
-
-def test_whatsapps_session_files_are_not_backed_up() -> None:
-    assert ".sessions" not in BACKUP_SCRIPT.replace("WAHA's session files", "")
-
-
-# PR7, T27: deletions survive a restore.
-async def _restore_person(owner_engine: AsyncEngine, person_id: int, whatsapp_id: str) -> None:
-    """What restoring an older backup does: the person is back, and the list forgot them."""
-    async with owner_engine.begin() as connection:
-        await connection.execute(
-            text("INSERT INTO person (id, whatsapp_id) OVERRIDING SYSTEM VALUE VALUES (:id, :w)"),
-            {"id": person_id, "w": whatsapp_id},
-        )
-        await connection.execute(
-            text("INSERT INTO category (person_id, name, direction) VALUES (:id, 'Makan', 'spending')"),
-            {"id": person_id},
-        )
-        await connection.execute(text("DELETE FROM deleted_person WHERE person_id = :id"), {"id": person_id})
-
-
-async def _person_exists(owner_engine: AsyncEngine, person_id: int) -> bool:
-    async with owner_engine.connect() as connection:
-        return await connection.scalar(text("SELECT count(*) FROM person WHERE id = :id"), {"id": person_id}) == 1
-
-
-async def test_a_deletion_is_reapplied_after_a_restore(
-    owner_engine: AsyncEngine, bot: Bot, member: str, tmp_path: Path
-) -> None:
-    async with owner_engine.connect() as connection:
-        person_id = int(
-            await connection.scalar(text("SELECT id FROM person WHERE whatsapp_id = :w"), {"w": member}) or 0
-        )
-    await bot.say(member, "hapus data saya")
-    await bot.say(member, "hapus semua")
-    deleted_list = tmp_path / "deleted-ids.txt"
-    await export_deleted_ids(owner_engine, deleted_list)
-
-    await _restore_person(owner_engine, person_id, member)
-    assert await _person_exists(owner_engine, person_id)
-    assert await reapply_deletions(owner_engine, deleted_list) == 1
-    assert not await _person_exists(owner_engine, person_id)
-
-
-async def test_reapplying_twice_changes_nothing_the_second_time(owner_engine: AsyncEngine, tmp_path: Path) -> None:
-    person_id = await create_person(owner_engine, whatsapp_id="reapply@lid")
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text(f"{person_id}\n", encoding="utf-8")
-    assert await reapply_deletions(owner_engine, deleted_list) == 1
-    assert await reapply_deletions(owner_engine, deleted_list) == 0
-
-
-async def test_the_export_keeps_ids_a_restore_has_forgotten(owner_engine: AsyncEngine, tmp_path: Path) -> None:
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text("999999999\n", encoding="utf-8")
-    await export_deleted_ids(owner_engine, deleted_list)
-    assert 999_999_999 in read_deleted_ids(deleted_list)
-    assert stat.S_IMODE(deleted_list.stat().st_mode) == 0o600
-
-
-def test_blank_lines_in_the_list_are_ignored(tmp_path: Path) -> None:
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text("5\n\n  \n7\n", encoding="utf-8")
-    assert read_deleted_ids(deleted_list) == {5, 7}
-
-
-def test_a_missing_list_means_nothing_to_reapply(tmp_path: Path) -> None:
-    assert read_deleted_ids(tmp_path / "none.txt") == set()
-
-
-@pytest.mark.parametrize("line", ["abc", "-1", "1.5", "１", "٣"])
-def test_a_list_with_a_line_that_is_not_an_id_is_refused(tmp_path: Path, line: str) -> None:
-    deleted_list = tmp_path / "deleted-ids.txt"
-    deleted_list.write_text(f"5\n{line}\n", encoding="utf-8")
-    with pytest.raises(DeletionListError, match="line 2"):
-        read_deleted_ids(deleted_list)
-
-
-def test_the_cli_exports_and_reapplies(database_name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv(OWNER_URL_ENV, database_url("tracker_owner", database_name))
-    deleted_list = tmp_path / "deleted-ids.txt"
-    assert runner.invoke(cli_app, ["deletions-export", str(deleted_list)]).exit_code == 0
-    assert runner.invoke(cli_app, ["deletions-reapply", str(deleted_list)]).exit_code == 0
-    deleted_list.write_text("not an id\n", encoding="utf-8")
-    result = runner.invoke(cli_app, ["deletions-reapply", str(deleted_list)])
-    assert result.exit_code == 1
-    assert "isn't a person id" in result.stderr
-
-
 async def test_each_message_logs_a_content_free_heartbeat(
     bot: Bot, member: str, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -298,6 +225,22 @@ def test_the_runbook_names_every_server_check() -> None:
         "deletions-reapply",
         "deletions-export",
         "backup_tracker.sh",
+        "export_deletions.sh",
+        "deletions-run",
+        "tracker deletion-cancel <id>",
+        "DELETE FROM deleted_person WHERE person_id = <id>",
+        "install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions",
+        "Leave the bucket's versioning off",
+        "the server's Postgres log",
+        "BACKUP_PGPASSFILE",
+        "age -d -i <key> tracker-*.dump.age | pg_restore -h 127.0.0.1",
+        "uv run tracker deletions-reapply <merged list>",
+        "ssh -L <port>:127.0.0.1:5432 <server>",
+        "host tracker tracker_owner 127.0.0.1/32 scram-sha-256",
+        'sed -i "s/^TRACKER_VERSION=.*/TRACKER_VERSION=$(git rev-parse HEAD)/" ops/.env',
+        "Docker Engine is 28 or later",
+        "rclone lsf --s3-versions :s3:<bucket>/tracker",
+        "DELETIONS_HEALTHCHECK_URL",
         "probe",
         "sentinel",
         "QR",

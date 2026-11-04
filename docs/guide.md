@@ -34,7 +34,9 @@ flowchart TD
 3. **Work out who it is.** `identify` asks WAHA for the sender's LID and phone number.
    The LID is the stable id. `@c.us` is the phone number itself.
 4. **Find the person.** `tracker/channel/conversation.py: _admit` asks the database
-   who this is (`resolve_sender`). A stranger leaves a count and gets silence. Then
+   who this is (`resolve_sender`). A stranger leaves a count and gets silence. Someone
+   linked as `<number>@c.us` before WAHA knew their LID is moved onto the LID the first
+   time it arrives with the same number (migration `0005`). Then
    `MessageLimiter.admit` checks the rate limits.
 5. **Check consent.** Without it, the person gets the notice and nothing is stored about
    the message. `setuju` only counts for a notice they were sent.
@@ -55,13 +57,25 @@ newest question, and a new entry closes any open one. `batal` with no question o
 only the newest entry, so repeating it can't reach an older one.
 
 **A message that looks like a card, account or ID number** stops at
-`tracker/parsing/sensitive.py: looks_sensitive`, before anything can store it.
+`tracker/parsing/sensitive.py: looks_sensitive`, before anything can store it. It doesn't
+list separators: any short run of characters that aren't letters or digits (`.`, ` - `,
+`:`, `|`...) joins two groups of digits, and digits from any script count. Amounts like
+`1.500.000`, which never start with a zero, are taken out first. A number of three or more
+digits after `pin`, `mpin`, `cvv`, `otp`, `sandi` or `password`, even with three words
+between, counts too, and so does a grouped number right after `rek` or `rekening`. As a second
+line, `hide_long_numbers` turns any number of 8 or more digits in a description into `#`,
+and if 8 or more digits are left however they're split, every number goes.
 
 **Leaving** is in `tracker/channel/leaving.py`. `ekspor` sends a CSV of the person's own
-records. `hapus data saya` asks first, and `hapus semua` within ten minutes runs
-`tracker_delete_person_in_scope`, a database function that can only reach the person in
-scope. Only their id stays, in `deleted_person`, so a deletion can be re-applied after a
-restore.
+records. `hapus data saya` asks first, and `hapus semua` within ten minutes marks the
+person's deletion as confirmed (`people.py: confirm_deletion`), which makes them a stranger
+at once. The app login can't delete: every 15 minutes, `export_deletions.sh` runs
+`tracker deletions-run` under the owner login, which calls `tracker_delete_person_in_scope`
+for each confirmed person (`deletions.py: run_confirmed_deletions`). More than two
+deletions in 24 hours looks like a taken-over app confirming for others, so it deletes
+none, fails, and the heartbeat alerts Arthur. A trigger stops the app undoing a
+confirmation. Only their id stays, in `deleted_person`, so a deletion can be
+re-applied after a restore.
 
 **Everything WhatsApp-specific is behind `tracker/channel/gateway.py`.** To replace WAHA,
 write one more class with those four methods. Nothing else changes.
@@ -159,9 +173,15 @@ run as user 10001 with a read-only root. The app's environment never holds the o
 login: migrations and Arthur's CLI run in separate, one-off containers.
 
 A nightly `ops/backup/backup_tracker.sh` streams the database into `age` and up to S3, and
-keeps 14 days. Every 15 minutes, `tracker deletions-export` copies the ids of people who
-left to a file no backup touches, so `tracker deletions-reapply` can delete them again
-after a restore. `docs/runbook-deploy.md` has every step.
+keeps 14 days; it then runs the purge of expired records, under the same heartbeat. Compose
+reads its own settings from `ops/.env` (see `ops/.env.example`), so cron sees them too.
+Every 15 minutes, `ops/backup/export_deletions.sh` runs
+`tracker deletions-export`, which copies the ids of people who left to `ops/deletions/`, a
+folder no backup touches, and then merges it into the bucket's `tracker-deletions/` copy,
+which the pruning never reaches and which only ever grows. After a restore, `tracker deletions-reapply` deletes them
+again, records them as deleted, and moves the id counter past them so nobody new gets a
+deleted person's id. A missing or empty list is an error, never "nobody to delete". Both
+scripts share `ops/backup/settings.sh`. `docs/runbook-deploy.md` has every step.
 
 ## Security comes first
 
@@ -307,6 +327,8 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Change a rate limit or the reply limit | `channel/ratelimit.py` |
 | Change what's kept, and for how long | `ledger/retention.py`, and PR6 in Phase 2 |
 | Delete someone without WhatsApp | `tracker delete <id> --yes`, with the owner's login |
+| Clear a deletion hold | Check each id `deletions-run` printed, then `tracker delete <id> --yes` or `tracker deletion-cancel <id>` |
+| Change how many deletions a day may bring | `MAX_DELETIONS_PER_DAY` in `ledger/deletions.py`, and ADR-023 |
 | Check the deployed version | `GET /healthz` gives `status` and `version` |
 | Add a person | `tracker add 628...`, with the owner's login |
 | Stop a person | `tracker suspend <id>`, then `tracker resume <id>` |
@@ -345,7 +367,8 @@ costs one reply. A wrong amount costs trust in every total after it.
 - **The number can be banned without warning.** Records are safe, but replies stop until
   a new number is linked. See ADR-022.
 - **A person known only by `@c.us` keeps the recycled-number risk,** because that id is
-  the number. A person with a LID doesn't.
+  the number, and moving them onto a LID trusts whoever holds the number then. Arthur
+  accepted this on 2026-11-04 (threat model, T12). A person with a LID doesn't carry it.
 - **`batal` undoes the newest entry at any age.** The reply names what was undone.
 - **Two entries at the same moment can miss a warning.** Neither sees the other
   before it commits. The next entry in that category gives the warning.
