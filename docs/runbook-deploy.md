@@ -79,11 +79,15 @@ fixtures, and fix the adapter before going further.
 
 ## 6. Backups and the restore drill
 
-Before the first run, make the deletion list's folder, owned by the image's user:
+Before the first run, make the deletion list's folder. The image's user (10001) writes the
+list; the owner account reads it through the folder's group, to copy it off the server.
+The setgid bit (the `2`) gives every new file that group, and the app writes it `640`:
 
 ```bash
-install -d -m 700 -o 10001 -g 10001 <repo>/ops/deletions
+install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions
 ```
+
+Turn on versioning for the bucket once, so an overwritten copy of the list can be got back.
 
 Cron, as the owner account:
 
@@ -94,8 +98,10 @@ Cron, as the owner account:
 ```
 
 `export_deletions.sh` runs `deletions-export` into `ops/deletions/deleted-ids.txt`, which
-`compose.yaml` mounts into the `cli` container, then copies the file to the bucket under
-`tracker-deletions/`. The list must outlive both an old backup and the server itself, so:
+`compose.yaml` mounts into the `cli` container, then merges it with the bucket's copy under
+`tracker-deletions/` and uploads the result, so the bucket's list only ever grows. If the
+bucket can't be read, it uploads nothing and fails. The list must outlive both an old
+backup and the server itself, so:
 - `tracker-deletions/` sits beside `tracker/`, where the backup prunes, never inside it;
 - if a lifecycle rule ever does the 14-day expiry, it must cover `tracker/` only;
 - the settings file needs `DELETIONS_HEALTHCHECK_URL`, a second heartbeat check that runs
@@ -115,6 +121,9 @@ The drill, timed, with WAHA stopped (`docker compose stop waha`):
 4. Compare row counts with the live database, and check that every id in the list is gone.
 5. Run `tracker export` for one person: it must work with WAHA stopped.
 6. Record how long it took. Delete the restored copy.
+
+On a server rebuilt after a loss, the restore is the real thing: add the
+`export_deletions.sh` cron line only after step 3.
 
 ## 7. Secret rotation, rehearsed once
 

@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tracker.ledger.people import delete_person
 
-OWNER_ONLY_FILE_MODE: Final = 0o600
+# Group-readable: the owner account reads it through the folder's group to copy it off the
+# server (export_deletions.sh), while the container writes it as user 10001. Ids only.
+LIST_FILE_MODE: Final = 0o640
 
 
 class DeletionListError(Exception):
@@ -44,7 +46,8 @@ def read_deleted_ids(path: Path) -> set[int]:
 def _write_ids(path: Path, ids: set[int]) -> None:
     """Writes atomically, so a crash can't leave half a list."""
     partial = path.with_name(f"{path.name}.partial")
-    descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, OWNER_ONLY_FILE_MODE)
+    descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, LIST_FILE_MODE)
+    os.fchmod(descriptor, LIST_FILE_MODE)  # Whatever the umask, or a leftover partial's mode.
     with os.fdopen(descriptor, "w", encoding="utf-8") as file:
         file.writelines(f"{person_id}\n" for person_id in sorted(ids))
     partial.replace(path)
