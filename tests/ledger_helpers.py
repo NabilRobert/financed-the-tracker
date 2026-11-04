@@ -40,18 +40,24 @@ async def add_entry(
     return written
 
 
-async def quiet_the_deletion_window(owner_engine: AsyncEngine) -> None:
-    """A quiet day for the owner job: earlier deletions move out of its 24-hour window, and
-    any confirmation another test or probe left waiting is cancelled, since the job counts
-    everyone in the shared test database."""
+async def _age_earlier_deletions(owner_engine: AsyncEngine) -> None:
+    """Moves earlier tests' deletions out of the owner job's 24-hour window."""
     async with owner_engine.begin() as connection:
         await connection.execute(text("UPDATE deleted_person SET deleted_at = deleted_at - interval '2 days'"))
+
+
+async def quiet_the_deletion_window(owner_engine: AsyncEngine) -> None:
+    """A quiet day for the owner job, before a test confirms anyone: earlier deletions leave
+    the 24-hour window, and any confirmation another test or probe left waiting is
+    cancelled, since the job counts everyone in the shared test database."""
+    await _age_earlier_deletions(owner_engine)
+    async with owner_engine.begin() as connection:
         await connection.execute(
             text("UPDATE person SET deletion_confirmed_at = NULL WHERE deletion_confirmed_at IS NOT NULL")
         )
 
 
 async def run_the_deletion_job(owner_engine: AsyncEngine) -> DeletionRun:
-    """The owner job on a quiet day, so other tests' deletions can't cause a hold."""
-    await quiet_the_deletion_window(owner_engine)
+    """The owner job, with earlier tests' deletions out of its window so they can't cause a hold."""
+    await _age_earlier_deletions(owner_engine)
     return await run_confirmed_deletions(owner_engine)
