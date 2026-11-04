@@ -76,7 +76,7 @@ that is live and unfixed. Findings stay in `private/` until they are fixed.
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
 | T11 | A lost or borrowed phone shows `rekap`, or runs `hapus data saya` | Deleting needs a typed confirmation within ten minutes. Arthur can suspend a person (I8). The rest is accepted and in the consent notice | `test_a_suspended_person_can_neither_read_nor_write`, `test_a_stale_deletion_request_cannot_be_confirmed` | 3, 4 | Done |
-| T12 | A recycled number reaches an old ledger | Keyed on the LID when WAHA gives one, so a new owner of a number is a new id. **A person known only by `@c.us` keeps this risk,** because that id is the number | `test_a_recycled_number_with_a_new_id_reaches_nothing`. The live check shows how often a LID is available | 3 | Part done |
+| T12 | A recycled number reaches an old ledger | Keyed on the LID when WAHA gives one, so a new owner of a number is a new id. **A person known only by `@c.us` keeps this risk,** because that id is the number. When their LID first arrives with the same number, they move onto it, so they don't go silent (found by the independent review); a person already on a LID is never moved. The rest is accepted below | `test_a_recycled_number_with_a_new_id_reaches_nothing`, `test_a_person_linked_by_number_is_moved_onto_their_lid`, `test_a_suspended_person_is_not_moved`. The live check shows how often a LID is available | 3 | Done, risk accepted |
 
 ### Sensitive content
 
@@ -164,6 +164,11 @@ Each of these is stated plainly in the consent notice or here:
 - **A person's phone is the only login.** Whoever holds it unlocked has their
   ledger.
 - **Someone with WAHA's session files is the bot's account** until it's unlinked.
+- **A person known only by their number can lose their ledger to the number's next
+  owner (T12).** Until WAHA gives their LID, their id is the number, and the move onto a
+  LID trusts whoever holds the number at that moment. Accepted by Arthur on 2026-11-04:
+  "go on 9 with your recommendations", the recommendation being to accept this rather
+  than refuse to link anyone without a LID.
 
 ## Independent review
 

@@ -34,7 +34,9 @@ flowchart TD
 3. **Work out who it is.** `identify` asks WAHA for the sender's LID and phone number.
    The LID is the stable id. `@c.us` is the phone number itself.
 4. **Find the person.** `tracker/channel/conversation.py: _admit` asks the database
-   who this is (`resolve_sender`). A stranger leaves a count and gets silence. Then
+   who this is (`resolve_sender`). A stranger leaves a count and gets silence. Someone
+   linked as `<number>@c.us` before WAHA knew their LID is moved onto the LID the first
+   time it arrives with the same number (migration `0005`). Then
    `MessageLimiter.admit` checks the rate limits.
 5. **Check consent.** Without it, the person gets the notice and nothing is stored about
    the message. `setuju` only counts for a notice they were sent.
@@ -356,7 +358,8 @@ costs one reply. A wrong amount costs trust in every total after it.
 - **The number can be banned without warning.** Records are safe, but replies stop until
   a new number is linked. See ADR-022.
 - **A person known only by `@c.us` keeps the recycled-number risk,** because that id is
-  the number. A person with a LID doesn't.
+  the number, and moving them onto a LID trusts whoever holds the number then. Arthur
+  accepted this on 2026-11-04 (threat model, T12). A person with a LID doesn't carry it.
 - **`batal` undoes the newest entry at any age.** The reply names what was undone.
 - **Two entries at the same moment can miss a warning.** Neither sees the other
   before it commits. The next entry in that category gives the warning.
