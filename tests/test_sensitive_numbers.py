@@ -29,6 +29,16 @@ MAX_CHECK_SECONDS = 0.5  # Far above a normal check; only runaway backtracking g
         "bayar 4111_1111_1111_1111",
         "bayar 4111 1111.1111 1111",
         "bayar 500.000 4111 1111 1111 1111",
+        "tf 50rb ke 0123:0456:0789:0123",
+        "tf 50rb ke 0123|0456|0789|0123",
+        "tf 50rb ke 0123*0456*0789*0123",
+        "tf 50rb ke 0123~0456~0789~0123",
+        "tf 50rb no 0123\u00b74567\u00b78901\u00b72345",
+        "tf 50rb no 0123\u20224567\u20228901\u20222345",
+        "tf 50rb no 0123\u30fb4567\u30fb8901\u30fb2345",
+        "tf 50rb no 0123\u20094567\u20098901\u20092345",
+        "tf 50rb no 0123\u30004567\u30008901\u30002345",
+        "no 4.111.111.111.111.111 beli 50rb",
         "bayar 4111\u00a01111\u00a01111\u00a01111",
         "bayar 4111\u20131111\u20131111\u20131111",
         "bayar 4111\u200b1111\u200b1111\u200b1111",
@@ -47,13 +57,30 @@ def test_a_card_number_with_any_separator_or_digits_is_caught(message: str) -> N
         "tf 50rb rek 012.345.678",
         "tf 50rb ke rek bri 0123-01-012345-50-1",
         "tf 50rb ke rek mandiri 123-00-1234567-8",
+        "tf 50rb ke rek 0123 - 0456 - 0789",
+        "tf 50rb ke rek 0123 . 0456 . 0789",
+        "tf 50rb ke rek 0123..0456..0789",
+        "beli 50rb no kartu 41111111",
     ],
 )
 def test_an_account_number_written_in_groups_is_caught(message: str) -> None:
     assert looks_sensitive(message)
 
 
-@pytest.mark.parametrize("message", ["tf 50rb pin 0123.45", "pin: 482913", "cvv 123", "PIN 0457"])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "tf 50rb pin 0123.45",
+        "pin: 482913",
+        "cvv 123",
+        "PIN 0457",
+        "tarik 500rb pin=0123",
+        "tarik 500rb pin atm 0123",
+        "tarik 500rb pin ke 0123",
+        "tarik 500rb pinnya 0123",
+        "beli 50rb cvv nya 012",
+    ],
+)
 def test_a_number_right_after_pin_or_cvv_is_caught(message: str) -> None:
     assert looks_sensitive(message)
 
@@ -66,7 +93,7 @@ def test_a_number_right_after_pin_or_cvv_is_caught(message: str) -> None:
         "harga 1.500.000-2.000.000",
         "kos 1,200,000",
         "beli pin 150rb",
-        "beli pin enamel 150000",
+        "pinjam uang 500000",
         "pin 25.000",
     ],
 )
@@ -81,6 +108,8 @@ def test_amounts_in_thousands_groups_are_not_mistaken_for_a_number_to_hide(messa
         ("pulsa 0812.0000 50rb", "pulsa #"),
         ("pulsa 0812-0000-0000 50rb", "pulsa #"),
         ("pulsa 0812 0000 0000 50rb", "pulsa #"),
+        ("pulsa 0812 - 0000 - 0000 50rb", "pulsa #"),
+        ("pulsa 0812:0000:0000 50rb", "pulsa #"),
     ],
 )
 def test_a_long_number_in_any_grouping_is_kept_out_of_the_description(message: str, description: str) -> None:
@@ -101,7 +130,9 @@ def test_a_short_number_stays_in_the_description() -> None:
     assert parsed.description == "tgl 25 makan"
 
 
-@pytest.mark.parametrize("filler", ["1.", "1 ", "1234 ", "123-", "\u00a01", "pin 1", "1.000 "])
+@pytest.mark.parametrize(
+    "filler", ["1.", "1 ", "1234 ", "123-", "\u00a01", "pin 1", "pin a ", "1.000 ", "1 - ", "0 . ", "1:"]
+)
 def test_a_long_run_of_digits_and_separators_is_checked_quickly(filler: str) -> None:
     message = (filler * MAX_TEXT_CHARS)[:MAX_TEXT_CHARS]
     started = time.perf_counter()
