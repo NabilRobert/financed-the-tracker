@@ -165,34 +165,44 @@ retention shares the backup's heartbeat. Neither script ever deletes from the bu
 The drill, timed, runs entirely on a machine that holds the age private key, never on the
 server, so nothing in it touches the live database. WAHA isn't needed.
 
-1. Copy there the newest `tracker-*.dump.age` from the bucket, the bucket's
-   `tracker-deletions/deleted-ids.txt` and the server's `ops/deletions/deleted-ids.txt`, then
-   `sort -un` the two lists into one file.
-2. Start a throwaway Postgres on that machine. Run `ops/db/roles.sql` in it, give
+1. With Arthur's own AWS login, run `ops/backup/check_bucket.sh <bucket> bucket-list.txt`
+   (R18, R19). It merges every copy the bucket keeps of the deletion list into
+   `bucket-list.txt`, so a shorter list written over it loses nothing. Then it checks that
+   no dump has two copies. **If it names a dump, stop:** someone overwrote it, so treat the
+   server as taken over. Restore from that dump's old copy while it lasts (4 days, shown by
+   `aws s3api list-object-versions`), or from the newest dump it doesn't name.
+2. Copy there the newest `tracker-*.dump.age` that passed, and the server's
+   `ops/deletions/deleted-ids.txt`. Then `sort -un` it and `bucket-list.txt` into one file.
+3. Start a throwaway Postgres on that machine. Run `ops/db/roles.sql` in it, give
    `tracker_owner` a password, and create an empty `tracker` database owned by it. Then
    restore without writing the decrypted dump to disk:
    `age -d -i <key> tracker-*.dump.age | pg_restore -h 127.0.0.1 -p <port> -U tracker_owner -d tracker`.
-3. From a checkout of the repo, point the CLI at that copy, not the live one:
+4. From a checkout of the repo, point the CLI at that copy, not the live one:
    `export TRACKER_MIGRATOR_DATABASE_URL=postgresql+asyncpg://tracker_owner:<password>@127.0.0.1:<port>/tracker`.
    **Before anything else, and before anyone is added**, run
    `uv run tracker deletions-reapply <merged list>`. It refuses a missing or empty list;
    `--empty-ok` is only for a database nobody has ever left. It also moves the id counter
    past every listed id, because the restore set it back.
-4. Compare row counts with the live database, and check that every id in the list is gone.
+5. Compare row counts with the live database, and check that every id in the list is gone.
    Check the 14-day promise too, with Arthur's own key: `rclone lsf --s3-versions --format tp :s3:<bucket>/tracker`
    lists no copy of any dump, current or old, more than 13 days old. Old copies younger
    than that are expected.
-5. `uv run tracker export <id> check.csv` for one person: it needs only the database.
-6. Record how long it took. Delete the throwaway database and the CSV.
+6. `uv run tracker export <id> check.csv` for one person: it needs only the database.
+7. Record how long it took. Delete the throwaway database and the CSV.
+
+**Run `check_bucket.sh` weekly as well,** not only at the drill. An overwrite it finds within
+4 days can still be undone from the old copy; after that, it still shows the server was
+taken over.
 
 **After losing the server,** the restore is the real thing, into the new server's Postgres:
 - section 1 there first, including `roles.sql` and an empty `tracker` database;
 - the same stream over an SSH tunnel to its Postgres:
-  `ssh -L <port>:127.0.0.1:5432 <server>`, then step 2's `age -d … | pg_restore -h 127.0.0.1 -p <port> …`.
-  Through the tunnel `tracker_owner` logs in from `127.0.0.1`, which step 7 refuses, so add
+  `ssh -L <port>:127.0.0.1:5432 <server>`, then step 3's `age -d … | pg_restore -h 127.0.0.1 -p <port> …`.
+  Through the tunnel `tracker_owner` logs in from `127.0.0.1`, which section 1's step 7 refuses, so add
   `host tracker tracker_owner 127.0.0.1/32 scram-sha-256` to `pg_hba.conf` for the restore,
   reload, and remove it straight after;
-- the bucket's list as `ops/deletions/deleted-ids.txt`, then
+- step 1's merged `bucket-list.txt` as `ops/deletions/deleted-ids.txt`, never the bucket's
+  current copy alone, then
   `docker compose -f ops/compose.yaml --profile tools run --rm cli deletions-reapply /deletions/deleted-ids.txt`
   before the app starts or anyone is added;
 - only then the `export_deletions.sh` cron line.

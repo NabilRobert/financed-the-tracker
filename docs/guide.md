@@ -177,7 +177,9 @@ login: migrations and Arthur's CLI run in separate, one-off containers.
 A nightly `ops/backup/backup_tracker.sh` streams the database into `age` and up to S3; it
 then runs the purge of expired records, under the same heartbeat. It never deletes from the
 bucket, and the server's key can't: the bucket's lifecycle rule (`ops/backup/s3-lifecycle.json`)
-expires old dumps within 13 days instead, so a taken-over server can't destroy the backups. Compose
+expires old dumps within 13 days instead, so a taken-over server can't destroy the backups. Versioning keeps
+an overwritten copy for 4 days. `ops/backup/check_bucket.sh`, run with Arthur's own login,
+names any dump that was overwritten, and merges every copy of the deletion list for a restore. Compose
 reads its own settings from `ops/.env` (see `ops/.env.example`), so cron sees them too.
 Every 15 minutes, `ops/backup/export_deletions.sh` runs
 `tracker deletions-export`, which copies the ids of people who left to `ops/deletions/`, a
