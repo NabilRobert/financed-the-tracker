@@ -56,7 +56,9 @@ anything above Rp10,000,000) becomes a row in `pending_entry`, and the person re
 newest question, and a new entry closes any open one. `batal` with no question open undoes
 only the newest entry, so repeating it can't reach an older one.
 
-**A message that looks like a card, account or ID number** stops at
+**Text longer than WhatsApp allows** (4,096 characters) is answered as not understood by
+`conversation.py: answer_without_the_ledger` before anything scans or cleans it, so a
+huge body costs nothing. **A message that looks like a card, account or ID number** stops at
 `tracker/parsing/sensitive.py: looks_sensitive`, before anything can store it. It doesn't
 list separators: any short run of characters that aren't letters or digits (`.`, ` - `,
 `:`, `|`...) joins two groups of digits, and digits from any script count. Amounts like

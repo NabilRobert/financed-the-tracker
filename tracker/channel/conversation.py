@@ -54,7 +54,7 @@ from tracker.ledger.people import (
 )
 from tracker.ledger.scope import PersonScope, person_transaction
 from tracker.ledger.summaries import today_in_jakarta
-from tracker.parsing.amount import AmbiguityReason, clean_text
+from tracker.parsing.amount import MAX_TEXT_CHARS, AmbiguityReason, clean_text
 from tracker.parsing.message import AmbiguousEntry, ParsedEntry, parse_message
 from tracker.parsing.sensitive import looks_sensitive
 
@@ -113,8 +113,9 @@ class Conversation:
         return answer.reply
 
     async def _answer(self, scope: PersonScope, inbound_message_id: int, text: str, today: date) -> Answer:
-        if looks_sensitive(text):
-            return Answer(replies.SENSITIVE_NUMBER, MessageOutcome.REFUSED)
+        refusal = answer_without_the_ledger(text)
+        if refusal is not None:
+            return refusal
         word = clean_text(text)
         question = await find_open_question(scope)
         if question is not None and word in (YES_WORD, CANCEL_WORD, *CHOICE_WORDS):
@@ -131,9 +132,26 @@ class Conversation:
         return await _log_message(scope, inbound_message_id, text, today)
 
 
+def answer_without_the_ledger(text: str) -> Answer | None:
+    """The refusals that need no database. The length comes first, so a body too long to be
+    a real WhatsApp message is never scanned or cleaned (L7)."""
+    if len(text) > MAX_TEXT_CHARS:
+        return Answer(replies.NOT_UNDERSTOOD, MessageOutcome.UNPARSED)
+    if looks_sensitive(text):
+        return Answer(replies.SENSITIVE_NUMBER, MessageOutcome.REFUSED)
+    return None
+
+
+def consent_word(text: str | None) -> str:
+    """The answer to the consent notice, or "" when there's none or it's too long to be one (L7)."""
+    if text is None or len(text) > MAX_TEXT_CHARS:
+        return ""
+    return clean_text(text)
+
+
 async def _ask_for_consent(scope: PersonScope, text: str | None) -> str:
     """I4: stores nothing about the message. `setuju` counts only for a notice this person was sent."""
-    word = clean_text(text or "")
+    word = consent_word(text)
     was_sent_this_notice = await notice_sent_version(scope) == CONSENT_NOTICE_VERSION
     if was_sent_this_notice and word == AGREE_WORD:
         await record_consent(scope, CONSENT_NOTICE_VERSION)
