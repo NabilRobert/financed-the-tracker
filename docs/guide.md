@@ -298,7 +298,7 @@ costs one reply. A wrong amount costs trust in every total after it.
 | **Restore drill** | Restoring a backup into an empty database, timed, to prove backups work | `docs/runbook-deploy.md` |
 | **Span** | One timed step in a trace. Ours hold names and outcomes, never content | `channel/tracing.py` |
 | **Outcome** | What became of a message, with no text, so misses can be counted | `inbound_message.outcome` |
-| **Reply limit** | A cap on sends across everyone. It replaced Meta's cap: a burst risks a ban | `channel/ratelimit.py` |
+| **Reply limit** | A cap on sends across everyone. It replaced Meta's cap: a burst risks a ban. Each person's daily message limit is a fifth of it, so one person can't use it all up | `channel/ratelimit.py` |
 | **Purge** | The job that deletes what's past keeping | `ledger/retention.py` |
 | **Threat model** | The list of what could go wrong, and what stops each thing | `docs/planning/threat-model.md` |
 | **Real-data gate** | The checklist that must pass before any real person's data enters the system | `docs/planning/slice-plan.md` |
