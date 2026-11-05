@@ -32,7 +32,7 @@ from webhook_fixtures import (
 
 from tracker.channel import conversation as conversation_module
 from tracker.channel.ratelimit import Admission, MessageLimiter
-from tracker.channel.replies import CONSENT_NOTICE, CONSENT_NOTICE_VERSION
+from tracker.channel.replies import CONSENT_DECLINED, CONSENT_NOTICE, CONSENT_NOTICE_VERSION
 from tracker.channel.webhook import WAHA_TIMEOUT_SECONDS, create_waha_client
 from tracker.cli import OWNER_URL_ENV
 from tracker.cli import app as cli_app
@@ -419,12 +419,13 @@ async def test_agreeing_twice_keeps_the_first_time(owner_engine: AsyncEngine, me
     assert await consent_time() == first
 
 
-async def test_declining_stores_nothing_and_says_so(owner_engine: AsyncEngine, bot: Bot) -> None:
+async def test_declining_keeps_only_the_invitation_and_says_so(owner_engine: AsyncEngine, bot: Bot) -> None:
     whatsapp_id = new_lid()
     person_id = await create_person(owner_engine, whatsapp_id=whatsapp_id)
     await bot.say(whatsapp_id, "halo")
     await bot.say(whatsapp_id, "tidak")
-    assert bot.waha.texts[-1] == "Oke. Tidak ada pesanmu yang disimpan."
+    assert bot.waha.texts[-1] == CONSENT_DECLINED
+    assert await person_id_of(owner_engine, whatsapp_id) == person_id  # The invitation the reply names.
     await bot.say(whatsapp_id, "makan 25rb")
     assert bot.waha.texts[-1] == CONSENT_NOTICE
     assert await row_counts(owner_engine, person_id) == NO_ROWS
