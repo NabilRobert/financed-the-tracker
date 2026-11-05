@@ -96,9 +96,30 @@ The setgid bit (the `2`) gives every new file that group, and the app writes it 
 install -d -m 2750 -o 10001 -g <owner account's group> <repo>/ops/deletions
 ```
 
-**Leave the bucket's versioning off.** With it on, the backup's pruning only adds a delete
-marker, and every pruned dump stays as an old version, which breaks the notice's "paling
-lama 14 hari". The deletion list doesn't need it: its upload only ever adds ids.
+**The bucket comes first,** set up by Arthur with his own admin login, never the server's
+key (L2, [ADR-024](planning/phase-5-architecture-decisions.md#adr-024-the-server-cant-delete-its-own-backups)).
+The server's key can write backups but never delete them, so a taken-over server can't
+destroy them along with the database. The bucket expires old dumps instead:
+1. **A bucket of its own.** Versioning is set for a whole bucket, and in a shared bucket
+   another project's pruning would leave its old versions behind forever.
+2. **Versioning on,** so overwriting a dump keeps the old copy.
+3. **The lifecycle rule in `ops/backup/s3-lifecycle.json`.**
+   - A dump in `tracker/` expires after 7 days.
+   - An expired or overwritten copy goes 4 days after that.
+   - S3 rounds each step up to midnight UTC, so no dump outlives 13 days. That's inside
+     the notice's "paling lama 14 hari", with a day to spare for S3's own delay.
+   - The rule never touches `tracker-deletions/`.
+4. **A backup key of its own,** with `ops/backup/s3-backup-key-policy.json` attached, after
+   replacing `BUCKET_NAME`.
+   - It can write, read and list the tracker's two folders.
+   - It's refused every delete, and every change to versioning, the lifecycle rule or the
+     bucket's policy.
+   - An attacker on the server can add files, or overwrite a dump. The original then stays
+     as an old copy for 4 days: time enough, because an attack that also wrecks the
+     database stops the bot, and the health probe and the no-messages alert both fire.
+5. **Check that the key is refused a delete,** before the first backup: upload a test file
+   with the backup key, try to delete it with the same key, and expect `AccessDenied`. The
+   lifecycle rule removes the test file.
 
 The backup settings file (`chmod 600`, owner account) holds the S3 and age settings,
 `BACKUP_DATABASE_URL` (the owner login with no password in it, which the script refuses)
@@ -117,8 +138,9 @@ Cron, as the owner account:
 `tracker-deletions/` and uploads the result, so the bucket's list only ever grows. If the
 bucket can't be read, it uploads nothing and fails. The list must outlive both an old
 backup and the server itself, so:
-- `tracker-deletions/` sits beside `tracker/`, where the backup prunes, never inside it;
-- if a lifecycle rule ever does the 14-day expiry, it must cover `tracker/` only;
+- `tracker-deletions/` sits beside `tracker/`, where the lifecycle rule expires dumps,
+  never inside it;
+- the lifecycle rule covers `tracker/` only, and a test holds it there;
 - the settings file needs `DELETIONS_HEALTHCHECK_URL`, a second heartbeat check that runs
   every 15 minutes, so a failing copy alerts.
 
@@ -138,7 +160,7 @@ from a backup:
 3. the line in the bucket's `tracker-deletions/deleted-ids.txt`: `rclone cat` it, remove the line, and `rclone rcat` it back. Take it out of the server's file first, or the next run's merge puts it back.
 
 `backup_tracker.sh` also runs the nightly purge of expired records, after the upload, so
-retention shares the backup's heartbeat.
+retention shares the backup's heartbeat. Neither script ever deletes from the bucket.
 
 The drill, timed, runs entirely on a machine that holds the age private key, never on the
 server, so nothing in it touches the live database. WAHA isn't needed.
@@ -157,8 +179,9 @@ server, so nothing in it touches the live database. WAHA isn't needed.
    `--empty-ok` is only for a database nobody has ever left. It also moves the id counter
    past every listed id, because the restore set it back.
 4. Compare row counts with the live database, and check that every id in the list is gone.
-   Check the 14-day promise too: `rclone lsf --s3-versions :s3:<bucket>/tracker` lists no
-   dump older than 15 days, and no old versions at all.
+   Check the 14-day promise too, with Arthur's own key: `rclone lsf --s3-versions --format tp :s3:<bucket>/tracker`
+   lists no copy of any dump, current or old, more than 13 days old. Old copies younger
+   than that are expected.
 5. `uv run tracker export <id> check.csv` for one person: it needs only the database.
 6. Record how long it took. Delete the throwaway database and the CSV.
 

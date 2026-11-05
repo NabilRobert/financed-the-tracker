@@ -65,6 +65,7 @@ uv run python -c "from tracker.parsing.message import parse_message; print(parse
 | `ops/backup/` | The nightly encrypted backup, and the deletion list copied off the server |
 | `ops/waha/` | WAHA's session config |
 | `docs/runbook-deploy.md` | Deploying, and checking the gate on the server |
+| `docs/go-live.md` | The order of it all: the local pairing test, the deploy, the gate, and rollback |
 | `tracker/ledger/scope.py` | `person_transaction`: the one way in, limited to one person |
 | `tracker/ledger/entries.py` | `write_entry` and `void_entry` |
 | `tracker/ledger/categories.py` | Choosing a category, and the words a person teaches it |

@@ -1,0 +1,12 @@
+{
+  "Rules": [
+    {
+      "ID": "tracker-dumps-expire-inside-the-notices-14-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "tracker/" },
+      "Expiration": { "Days": 7 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 4 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+    }
+  ]
+}

@@ -172,16 +172,19 @@ monitoring stack reaches the app over its own network, and reads its log from a 
 run as user 10001 with a read-only root. The app's environment never holds the owner's
 login: migrations and Arthur's CLI run in separate, one-off containers.
 
-A nightly `ops/backup/backup_tracker.sh` streams the database into `age` and up to S3, and
-keeps 14 days; it then runs the purge of expired records, under the same heartbeat. Compose
+A nightly `ops/backup/backup_tracker.sh` streams the database into `age` and up to S3; it
+then runs the purge of expired records, under the same heartbeat. It never deletes from the
+bucket, and the server's key can't: the bucket's lifecycle rule (`ops/backup/s3-lifecycle.json`)
+expires old dumps within 13 days instead, so a taken-over server can't destroy the backups. Compose
 reads its own settings from `ops/.env` (see `ops/.env.example`), so cron sees them too.
 Every 15 minutes, `ops/backup/export_deletions.sh` runs
 `tracker deletions-export`, which copies the ids of people who left to `ops/deletions/`, a
 folder no backup touches, and then merges it into the bucket's `tracker-deletions/` copy,
-which the pruning never reaches and which only ever grows. After a restore, `tracker deletions-reapply` deletes them
+which the lifecycle rule never reaches and which only ever grows. After a restore, `tracker deletions-reapply` deletes them
 again, records them as deleted, and moves the id counter past them so nobody new gets a
 deleted person's id. A missing or empty list is an error, never "nobody to delete". Both
-scripts share `ops/backup/settings.sh`. `docs/runbook-deploy.md` has every step.
+scripts share `ops/backup/settings.sh`. `docs/runbook-deploy.md` has every step, and
+`docs/go-live.md` puts them in order, from a local pairing test to the gate and back out.
 
 ## Security comes first
 

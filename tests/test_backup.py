@@ -1,5 +1,7 @@
 """PR4, PR6, T25: the nightly encrypted backup, and the purge that runs under its heartbeat.
 
+What it may do to the bucket, and how the bucket expires old dumps, is in test_bucket_rules.py.
+
 The script runs with its outside commands replaced by stubs (ops_scripts.py), so these
 tests check what it runs and in what order, with no database, bucket or network.
 """
@@ -25,20 +27,12 @@ def test_the_backup_key_is_configuration_not_code() -> None:
     assert 'AGE_RECIPIENT="$(require AGE_RECIPIENT)"' in BACKUP_SCRIPT
 
 
-def test_the_backup_keeps_the_period_the_notice_states() -> None:
-    from tracker.channel.replies import CONSENT_NOTICE
-
-    assert "KEEP=14" in BACKUP_SCRIPT
-    assert "paling lama 14 hari" in CONSENT_NOTICE
-
-
-def test_the_backup_uploads_prunes_then_reports_success(tmp_path: Path) -> None:
+def test_the_backup_uploads_then_reports_success(tmp_path: Path) -> None:
     stubs = {"docker": "", "pg_dump": "", "age": "", "rclone": "", "curl": ""}
     calls = run_with_stubs(copy_ops_folder(tmp_path) / "backup" / "backup_tracker.sh", tmp_path, stubs)
     assert calls[0].endswith(f"{HEALTHCHECK_URL}/start")
     assert calls[-1].endswith(HEALTHCHECK_URL)
     assert any(call.startswith("rclone rcat :s3:example-bucket/tracker/tracker-") for call in calls)
-    assert any(call.startswith("rclone lsf :s3:example-bucket/tracker ") for call in calls)
 
 
 def test_the_nightly_run_purges_expired_records_after_the_backup(tmp_path: Path) -> None:
@@ -89,7 +83,7 @@ def test_a_failed_dump_reports_failure(tmp_path: Path) -> None:
     stubs = {"docker": "", "pg_dump": "exit 1", "age": "", "rclone": "", "curl": ""}
     calls = run_with_stubs(copy_ops_folder(tmp_path) / "backup" / "backup_tracker.sh", tmp_path, stubs)
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
-    assert not any(call.startswith("rclone lsf") for call in calls)
+    assert not any(call.endswith("run --rm cli purge") for call in calls)
 
 
 def test_whatsapps_session_files_are_not_backed_up() -> None:
