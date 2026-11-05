@@ -44,6 +44,18 @@ def run_with_stubs(
 ) -> list[str]:
     """Runs the script with a stub for each named command, which then runs the given shell
     ("" to succeed), and the fake settings with any changes. Returns the calls, one per line."""
+    calls, _ = run_with_stubs_and_result(script, tmp_path, stubs_by_name, settings_changes)
+    return calls
+
+
+def run_with_stubs_and_result(
+    script: Path,
+    tmp_path: Path,
+    stubs_by_name: dict[str, str],
+    settings_changes: dict[str, str] | None = None,
+    arguments: tuple[str, ...] = (),
+) -> tuple[list[str], subprocess.CompletedProcess[str]]:
+    """As run_with_stubs, with arguments for the script, and its exit code and output too."""
     stubs = tmp_path / "bin"
     stubs.mkdir()
     for name, behaviour in stubs_by_name.items():
@@ -61,8 +73,10 @@ def run_with_stubs(
     }
     bash = shutil.which("bash")
     assert bash is not None
-    subprocess.run([bash, str(script)], env=environment, check=False, capture_output=True)  # noqa: S603 - our own script.
-    return call_log.read_text(encoding="utf-8").splitlines()
+    result = subprocess.run(  # noqa: S603 - our own script.
+        [bash, str(script), *arguments], env=environment, check=False, capture_output=True, text=True
+    )
+    return call_log.read_text(encoding="utf-8").splitlines(), result
 
 
 # What `deletions-run` prints on a quiet run, which export_deletions.sh needs to see (R12).
