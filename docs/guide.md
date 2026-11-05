@@ -181,7 +181,8 @@ folder no backup touches, and then merges it into the bucket's `tracker-deletion
 which the pruning never reaches and which only ever grows. After a restore, `tracker deletions-reapply` deletes them
 again, records them as deleted, and moves the id counter past them so nobody new gets a
 deleted person's id. A missing or empty list is an error, never "nobody to delete". Both
-scripts share `ops/backup/settings.sh`. `docs/runbook-deploy.md` has every step.
+scripts share `ops/backup/settings.sh`. `docs/runbook-deploy.md` has every step, and
+`docs/go-live.md` puts them in order, from a local pairing test to the gate and back out.
 
 ## Security comes first
 
