@@ -116,6 +116,7 @@ async def test_the_cli_deletes_when_nothing_is_held(
     [person_id] = await _confirmed_people(owner_engine, app_engine, 1)
     result = await asyncio.to_thread(runner.invoke, cli_app, ["deletions-run"])
     assert result.exit_code == 0
+    assert "deletions_run deleted=1" in result.stdout  # export_deletions.sh alerts on it (R12).
     assert not await _person_exists(owner_engine, person_id)
 
 

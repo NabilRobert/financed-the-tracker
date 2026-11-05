@@ -729,7 +729,9 @@ taken-over app could confirm two people every 15 minutes and never trip it. The 
 every deletion in `deleted_person`, including `tracker delete` and a reapply, so a restore
 is followed by a day of holds, which Arthur clears by hand.
 
-**What a forged deletion costs.** Up to two people a day, until Arthur notices. Their ids
+**What a forged deletion costs.** Up to two people a day, until Arthur notices. Since the
+review's R12, every run that deletes anyone fails its heartbeat with the count, so he notices
+within 15 minutes, while the backups still hold them. Their ids
 reach the deletion lists, so a restore alone doesn't bring them back: the runbook says how
 to take a forged id out of the database and both lists before restoring that person.
 

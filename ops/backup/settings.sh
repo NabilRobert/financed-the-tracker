@@ -11,8 +11,14 @@ require() {
   printf '%s' "$value"
 }
 
+# Pings the heartbeat at a path ("", /start or /fail), with an optional message for its log.
 ping_hc() {
-  if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL$1" >/dev/null || true; fi
+  if [ -z "$HC_URL" ]; then return; fi
+  if [ -n "${2:-}" ]; then
+    curl -fsS -m 10 --retry 3 --data-raw "$2" "$HC_URL$1" >/dev/null || true
+  else
+    curl -fsS -m 10 --retry 3 "$HC_URL$1" >/dev/null || true
+  fi
 }
 
 # Pings /start now and /fail if the script exits with an error; the script pings "" when done.

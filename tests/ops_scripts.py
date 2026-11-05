@@ -63,3 +63,25 @@ def run_with_stubs(
     assert bash is not None
     subprocess.run([bash, str(script)], env=environment, check=False, capture_output=True)  # noqa: S603 - our own script.
     return call_log.read_text(encoding="utf-8").splitlines()
+
+
+# What `deletions-run` prints on a quiet run, which export_deletions.sh needs to see (R12).
+QUIET_DELETIONS_RUN = 'case "$*" in *deletions-run*) echo "deletions_run deleted=0" ;; esac'
+
+
+def run_export_deletions(
+    tmp_path: Path, *, on_server: str, in_bucket: str | None, docker: str = QUIET_DELETIONS_RUN
+) -> tuple[list[str], str]:
+    """Runs export_deletions.sh with the list on the server and in the bucket as given
+    (None: the bucket has no copy). Returns the calls and what was uploaded ("" if nothing)."""
+    ops = copy_ops_folder(tmp_path)
+    (ops / "deletions").mkdir()
+    (ops / "deletions" / "deleted-ids.txt").write_text(on_server, encoding="utf-8")
+    uploaded = tmp_path / "uploaded.txt"
+    listing = "deleted-ids.txt" if in_bucket is not None else ""
+    rclone = (
+        f'case "$1" in lsf) echo "{listing}" ;; cat) printf "{in_bucket or ""}" ;; rcat) cat > "{uploaded}" ;; esac'
+    )
+    script = ops / "backup" / "export_deletions.sh"
+    calls = run_with_stubs(script, tmp_path, {"docker": docker, "rclone": rclone, "curl": ""})
+    return calls, uploaded.read_text(encoding="utf-8") if uploaded.exists() else ""
