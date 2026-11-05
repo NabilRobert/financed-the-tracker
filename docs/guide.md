@@ -39,7 +39,8 @@ flowchart TD
    time it arrives with the same number (migration `0005`). Then
    `MessageLimiter.admit` checks the rate limits.
 5. **Check consent.** Without it, the person gets the notice and nothing is stored about
-   the message. `setuju` only counts for a notice they were sent.
+   the message. `setuju` only counts for a notice they were sent. `tidak` keeps only the
+   invitation, with their WhatsApp id, and the reply says so: removing it is `tracker delete`.
 6. **Claim the message.** `claim_message` records the message id. A repeat stops here.
 7. **Answer.** `_answer` looks for a typed answer to an open question, then `batal`, then
    a command. Anything else goes to `parse_message`, and is written, asked about, or

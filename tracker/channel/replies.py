@@ -34,7 +34,12 @@ Kalau setuju, balas: setuju
 Kalau tidak, balas: tidak. Tidak ada pesanmu yang disimpan."""
 
 CONSENT_THANKS: Final = 'Terima kasih! Coba kirim: makan 25rb. Tulis "bantuan" untuk melihat caranya.'
-CONSENT_DECLINED: Final = "Oke. Tidak ada pesanmu yang disimpan."
+# Says what a decline keeps: the invitation Arthur made, with the WhatsApp id it now carries.
+# Removing it is Arthur's, through `tracker delete`, because the app can't delete (L9, M1).
+CONSENT_DECLINED: Final = (
+    "Oke. Pesanmu tidak disimpan. Yang tetap ada hanya undanganmu, dengan ID WhatsApp kamu, "
+    "supaya kamu bisa membalas setuju nanti. Mau undangan itu dihapus juga? Minta Arthur."
+)
 NOT_UNDERSTOOD: Final = 'Belum paham. Coba tulis seperti ini: makan 25rb. Tulis "bantuan" untuk melihat caranya.'
 NOT_TEXT: Final = "Bot ini baru bisa membaca teks. Coba tulis: makan 25rb."
 ALREADY_UNDONE: Final = "Catatan terakhir sudah dibatalkan."
