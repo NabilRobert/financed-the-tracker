@@ -272,8 +272,9 @@ It doesn't cover the live server. The server checks in runbook section 5 do that
 
 **The review already done counts.** Its fixes were merged as #13. No fresh review is
 needed, but three things close it:
-1. the reviewer's final check on the merged `main`, which is still to do;
-2. Arthur's own line accepting R6, the one finding left to him. L2 is fixed (ADR-024);
+1. the reviewer's final check on the merged `main`, which passed on 2026-11-05;
+2. Arthur's calls on the two findings left to him: R6 is accepted in his own words, and L2
+   is fixed (ADR-024). Both are done;
 3. if any code (not docs) changes between that commit and the one deployed, such as an
    adapter fix from part 1, a review of that diff alone.
 

@@ -172,9 +172,8 @@ Each of these is stated plainly in the consent notice or here:
 - **Someone with WAHA's session files is the bot's account** until it's unlinked.
 - **A person known only by their number can lose their ledger to the number's next
   owner (T12).** Until WAHA gives their LID, their id is the number, and the move onto a
-  LID trusts whoever holds the number at that moment. Accepted by Arthur on 2026-11-04:
-  "go on 9 with your recommendations", the recommendation being to accept this rather
-  than refuse to link anyone without a LID.
+  LID trusts whoever holds the number at that moment. Accepted by Arthur on 2026-11-05,
+  in his own words: "I accept the recycled-number risk for Project 9" (R6).
 
 ## Independent review
 
