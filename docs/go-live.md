@@ -209,7 +209,7 @@ Check that the SIM phone's "Linked devices" list is empty.
 | The server work confirms it's ready for this data (P4) | Gate line 12, signed by the server work, not by Arthur alone | Open |
 | The monitoring stack is up | The app joins its network, and the alerts in runbook section 8 live there | Check with the systems-monitoring session |
 | Part 1, with any adapter fixes merged | The server runs what the live check proved | Waiting for the SIM |
-| Arthur's call on L2 (backups a compromised server could delete) | S3 Object Lock needs versioning, which runbook section 6 now keeps off. Choosing it changes that section, so decide before setting up the bucket | Open |
+| The bucket, set up by Arthur (L2, ADR-024) | Its own bucket, with versioning on, the lifecycle rule, and a backup key that can't delete. Chosen over Object Lock, which adds nothing against a taken-over server and can never be shortened if it's wrong. The key must be refused a delete before the first backup | Decided 2026-11-05; Arthur sets it up |
 
 **The age key:** the tracker's backup settings file has its own `AGE_RECIPIENT`. Set it to
 the new key's public key, the same one MCP-backbone now reads as `AGE_PUBLIC_KEY`. The
@@ -223,9 +223,10 @@ which has the commands. The server is `<server>` throughout: its address stays o
    three env files, the folders, `pg_hba` and ufw for the two subnets, the Docker version
    check, and the AIDE exclusion.
 3. [Runbook section 2](runbook-deploy.md#2-build-and-migrate): build, migrate, and start.
-4. [Runbook section 6](runbook-deploy.md#6-backups-and-the-restore-drill): the deletion
-   folder, the backup settings file with the new `AGE_RECIPIENT`, both heartbeat checks, and
-   both cron lines. Run `backup_tracker.sh` once by hand, and confirm its heartbeat.
+4. [Runbook section 6](runbook-deploy.md#6-backups-and-the-restore-drill): the bucket
+   first (its own, versioning on, the lifecycle rule, the no-delete key, and the delete
+   check), then the deletion folder, the backup settings file with the new `AGE_RECIPIENT`
+   and the new key, both heartbeat checks, and both cron lines. Run `backup_tracker.sh` once by hand, and confirm its heartbeat.
 5. [Runbook section 3](runbook-deploy.md#3-link-the-number-arthur-only): over
    `ssh -L 3000:127.0.0.1:3000 <server>`, create the session and scan the QR code, as in
    steps 1.5 above, with the server's keys.
@@ -253,7 +254,7 @@ Nothing in it touches the live database or needs WAHA.
 - `deletions-reapply` on the merged list exits 0. It refuses an empty list unless nobody
   has ever left;
 - the row counts match the live database's, and no id on the list is left;
-- `rclone lsf --s3-versions` shows no dump older than 15 days, and no old versions;
+- `rclone lsf --s3-versions`, with Arthur's own key, shows no copy of a dump, current or old, more than 13 days old;
 - `tracker export <id>` writes a CSV that matches what that person sent;
 - the time it took is recorded in the private note, with the date, the commit and the dump's name.
 
@@ -272,7 +273,7 @@ It doesn't cover the live server. The server checks in runbook section 5 do that
 **The review already done counts.** Its fixes were merged as #13. No fresh review is
 needed, but three things close it:
 1. the reviewer's final check on the merged `main`, which is still to do;
-2. Arthur's written calls on L2 and R6, the two findings left to him;
+2. Arthur's own line accepting R6, the one finding left to him. L2 is fixed (ADR-024);
 3. if any code (not docs) changes between that commit and the one deployed, such as an
    adapter fix from part 1, a review of that diff alone.
 

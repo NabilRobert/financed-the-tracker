@@ -733,3 +733,28 @@ is followed by a day of holds, which Arthur clears by hand.
 reach the deletion lists, so a restore alone doesn't bring them back: the runbook says how
 to take a forged id out of the database and both lists before restoring that person.
 
+
+## ADR-024: The server can't delete its own backups
+
+**Decision (Arthur, 2026-11-05):** "fix L2".
+
+**Why it came up.** The independent review (L2) found the server's S3 key could delete
+every backup. `backup_tracker.sh` needed that, to prune dumps past 14 days. So a
+taken-over server could destroy the database and its backups together.
+
+| Option | Verdict |
+|---|---|
+| **A key that can't delete, versioning on, and a lifecycle rule doing the expiry** | **Chosen.** The key is refused every delete and every change to versioning, the lifecycle rule or the bucket policy. An overwrite only makes an old copy, which stays for 4 days. Dumps expire after 7 days, and old copies 4 days later. S3 rounds each step to midnight UTC, so the longest any dump survives is 13 days, inside the notice's 14. Arthur can still fix a mistake with his own login |
+| S3 Object Lock in compliance mode | Rejected, though it was the first recommendation. It also needs versioning. What it adds is protection from Arthur's own admin login, which is never on the server, so it does nothing more against L2. And nobody can shorten it, so a wrong retention or an early deletion could never be fixed |
+| Only allow writes that can't overwrite (S3's `If-None-Match` condition) | Rejected: rclone would have to send the header on every multipart upload, which can't be checked without a real bucket. The deletion list also has to be rewritten |
+| Keep the key's delete, and accept the risk in writing | Rejected by Arthur |
+
+**The cost.**
+- Seven nightly restore points instead of fourteen.
+- An attacker on the server who overwrites dumps quietly, leaving the database alone,
+  has 4 days before the originals expire. An attack that also wrecks the database is
+  loud: the bot stops, and the health probe and the no-messages alert fire.
+- The tracker needs a bucket of its own, because versioning is set for a whole bucket.
+  In a shared bucket, MCP-backbone's pruning would leave its old dumps behind forever.
+- The lifecycle rule and the key's policy live in `ops/backup/` with the bucket name as a
+  placeholder. Tests check them against the notice and the deletion list's folder.

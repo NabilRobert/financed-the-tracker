@@ -278,13 +278,6 @@ def test_an_unreadable_bucket_uploads_nothing_and_reports_failure(tmp_path: Path
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
 
 
-def test_the_copy_off_the_server_is_out_of_reach_of_the_backup_pruning() -> None:
-    backup_script = (REPO_ROOT / "ops" / "backup" / "backup_tracker.sh").read_text(encoding="utf-8")
-    assert 'REMOTE=":s3:$S3_BUCKET/$PREFIX"' in backup_script
-    assert 'PREFIX="tracker"' in backup_script
-    assert "tracker-deletions/" in EXPORT_SCRIPT.read_text(encoding="utf-8")
-
-
 async def test_reapplying_never_moves_the_id_counter_back(owner_engine: AsyncEngine, tmp_path: Path) -> None:
     leaver = await create_person(owner_engine, whatsapp_id=new_lid())
     await delete_person(owner_engine, leaver)
