@@ -23,7 +23,14 @@ COMPOSE=(docker compose -f "$OPS_DIR/compose.yaml" --profile tools run --rm cli)
 # deletes none and fails. The export and upload still run, so a `tracker delete` made by
 # hand during a hold is copied off, and the script fails at the end, so the heartbeat alerts.
 deletions_failed=0
-"${COMPOSE[@]}" deletions-run || deletions_failed=1
+run_output="$("${COMPOSE[@]}" deletions-run)" || deletions_failed=1
+# A run that deleted people must alert (R12), so a count that can't be read is a failure,
+# never zero. tr drops the \r a pseudo-terminal adds to each line.
+deleted_count="$(printf '%s\n' "$run_output" | tr -d '\r' | sed -n 's/^deletions_run deleted=\([0-9][0-9]*\)$/\1/p')"
+if [ "$deletions_failed" -eq 0 ] && [ -z "$deleted_count" ]; then
+  echo "export_deletions: deletions-run printed no count: check what it deleted" >&2
+  deletions_failed=1
+fi
 "${COMPOSE[@]}" deletions-export /deletions/deleted-ids.txt
 
 # Merge with the bucket's copy before uploading, so the upload can only add ids. A server
@@ -41,4 +48,10 @@ if [ "$merged" != "$in_bucket" ]; then
 fi
 
 if [ "$deletions_failed" -ne 0 ]; then exit 1; fi
+# Every deletion alerts too, with the count and never an id, so forged deletions under the
+# daily cap can't pass unseen (R12). The next quiet run sets the heartbeat back to up.
+if [ "$deleted_count" -gt 0 ]; then
+  ping_hc /fail "deletions_run deleted=$deleted_count"
+  exit 0
+fi
 ping_hc ""

@@ -102,7 +102,7 @@ people's financial records on this channel? It stays open, and still gates real 
 
 | # | Threat | Control | Proof | Slice | Status |
 |---|---|---|---|---|---|
-| T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says. It can mark a deletion as confirmed, for anyone, because it chooses whose scope it acts in (found by the independent review). So only the owner job deletes, at most two people a day; more is held for Arthur, and the heartbeat alerts. The app can't undo a confirmation (ADR-023) | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says`, `test_the_app_login_cannot_run_the_delete_function`, `test_more_confirmed_than_the_cap_are_all_held`, `test_confirmations_spread_across_runs_are_held_once_the_day_is_full`, `test_the_app_cannot_undo_a_confirmed_deletion` | 2 | Done |
+| T20 | The app is taken over and alters the ledger | `tracker_app` can delete nothing and can't edit what an entry says. It can mark a deletion as confirmed, for anyone, because it chooses whose scope it acts in (found by the independent review). So only the owner job deletes, at most two people a day; more is held for Arthur, and the heartbeat alerts. Every run that deletes anyone alerts too, with a count and no id, so Arthur sees each deletion within 15 minutes (R12). The app can't undo a confirmation (ADR-023) | `test_the_app_can_delete_nothing`, `test_the_app_cannot_edit_what_an_entry_says`, `test_the_app_login_cannot_run_the_delete_function`, `test_more_confirmed_than_the_cap_are_all_held`, `test_confirmations_spread_across_runs_are_held_once_the_day_is_full`, `test_the_app_cannot_undo_a_confirmed_deletion`, `test_a_run_that_deletes_someone_alerts_with_the_count`, `test_a_run_whose_count_cannot_be_read_fails_rather_than_stay_quiet` | 2 | Done |
 | T21 | The app is taken over and reads the ledger | **Row-level security doesn't stop this,** because the app sets the person. Limits: user 10001, a read-only root, no capabilities and a 256 MB cap, with no owner login in its environment; little data kept, and the number dropped once a LID is known. The rest is accepted | `test_the_app_never_gets_the_owners_login`, `test_the_app_container_is_locked_down`, and the image run as user 10001 with a read-only root. `docker inspect` on the server | 3, 5 | Part done |
 | T22 | Postgres is reachable from outside, or a login is stolen | Not published to the internet. One login per job, with the least grants (ADR-009) | Least grants are tested. An outside probe in slice 5 | 2, 5 | Part done |
 | T23 | The webhook secret or WAHA's API key is stolen | Least reach: WAHA is never public. `.env` readable only by the app, and written rotation steps | Rotation rehearsed once before the gate | 5 | Planned |
@@ -163,7 +163,8 @@ Each of these is stated plainly in the consent notice or here:
 - **If the running app is taken over, entries can be read.** Encrypting fields
   wouldn't help, because the key would sit on the same server.
 - **A taken-over app can lock people out, and get up to two a day deleted,** by
-  confirming deletions they never asked for. More is held for Arthur (ADR-023). A forged
+  confirming deletions they never asked for. More is held for Arthur (ADR-023), and every
+  deletion alerts him within 15 minutes. A forged
   id also reaches the deletion lists, so getting such a person back means a restore plus
   the runbook's steps for taking the id out of the lists, within the backups' 14 days.
   Chosen by Arthur on 2026-11-04.

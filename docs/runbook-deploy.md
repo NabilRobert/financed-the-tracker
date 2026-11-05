@@ -152,6 +152,13 @@ they came to confirm, then `tracker delete <id> --yes` for real requests and
 `tracker deletion-cancel <id>` for the rest. The day counts a reapply too, so expect a
 hold in the day after a restore.
 
+**Every deletion alerts too,** not only a hold (R12). A run that deletes anyone fails the
+deletions heartbeat with `deletions_run deleted=N` in the ping's log: a count, never an id.
+The next quiet run sets it back to up. When one arrives, check that each person in
+`deleted_person` from the last 15 minutes asked to leave. Unexpected ones mean the app may be
+taken over: follow "If a deletion turns out to be forged" below while the backups still hold
+them. A run whose count can't be read fails too, rather than stay quiet.
+
 **If a deletion turns out to be forged,** the id is in three places that each bring it
 back. With the export cron line paused, take it out of all three, then restore that person
 from a backup:

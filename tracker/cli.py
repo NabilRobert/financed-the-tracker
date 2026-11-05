@@ -104,7 +104,8 @@ def deletions_run() -> None:
             err=True,
         )
         raise typer.Exit(code=1)
-    typer.echo(f"Deleted {len(result.deleted)} people.")
+    # export_deletions.sh reads this line, and alerts on any count above zero (R12).
+    typer.echo(f"deletions_run deleted={len(result.deleted)}")
 
 
 @app.command("deletion-cancel")

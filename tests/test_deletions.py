@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from conftest import Bot, database_url
 from ledger_helpers import run_the_deletion_job
-from ops_scripts import HEALTHCHECK_URL, copy_ops_folder, run_with_stubs
+from ops_scripts import HEALTHCHECK_URL, copy_ops_folder, run_export_deletions, run_with_stubs
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from typer.testing import CliRunner
@@ -210,24 +210,8 @@ def test_the_deletion_list_folder_is_never_committed() -> None:
     assert "ops/deletions/" in gitignore
 
 
-def _run_export(tmp_path: Path, *, on_server: str, in_bucket: str | None, docker: str = "") -> tuple[list[str], str]:
-    """Runs export_deletions.sh with the list on the server and in the bucket as given
-    (None: the bucket has no copy). Returns the calls and what was uploaded ("" if nothing)."""
-    ops = copy_ops_folder(tmp_path)
-    (ops / "deletions").mkdir()
-    (ops / "deletions" / "deleted-ids.txt").write_text(on_server, encoding="utf-8")
-    uploaded = tmp_path / "uploaded.txt"
-    listing = "deleted-ids.txt" if in_bucket is not None else ""
-    rclone = (
-        f'case "$1" in lsf) echo "{listing}" ;; cat) printf "{in_bucket or ""}" ;; rcat) cat > "{uploaded}" ;; esac'
-    )
-    script = ops / "backup" / "export_deletions.sh"
-    calls = run_with_stubs(script, tmp_path, {"docker": docker, "rclone": rclone, "curl": ""})
-    return calls, uploaded.read_text(encoding="utf-8") if uploaded.exists() else ""
-
-
 def test_the_export_uploads_the_list_then_reports_success(tmp_path: Path) -> None:
-    calls, uploaded = _run_export(tmp_path, on_server="5\n7\n", in_bucket=None)
+    calls, uploaded = run_export_deletions(tmp_path, on_server="5\n7\n", in_bucket=None)
     assert calls[1].endswith("deletions-run")
     assert calls[2].endswith("deletions-export /deletions/deleted-ids.txt")
     assert calls[-2] == "rclone rcat :s3:example-bucket/tracker-deletions/deleted-ids.txt"
@@ -237,12 +221,12 @@ def test_the_export_uploads_the_list_then_reports_success(tmp_path: Path) -> Non
 
 def test_the_upload_keeps_every_id_the_bucket_already_has(tmp_path: Path) -> None:
     """A server rebuilt from an old backup has a short list; it must never shrink the bucket's."""
-    _, uploaded = _run_export(tmp_path, on_server="5\n7\n", in_bucket="3\n9\n5\n")
+    _, uploaded = run_export_deletions(tmp_path, on_server="5\n7\n", in_bucket="3\n9\n5\n")
     assert uploaded == "3\n5\n7\n9\n"
 
 
 def test_nothing_is_uploaded_when_the_bucket_already_has_every_id(tmp_path: Path) -> None:
-    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket="5\n3\n")
+    calls, uploaded = run_export_deletions(tmp_path, on_server="5\n", in_bucket="5\n3\n")
     assert uploaded == ""
     assert not any(call.startswith("rclone rcat") for call in calls)
     assert calls[-1].endswith(HEALTHCHECK_URL)
@@ -251,7 +235,7 @@ def test_nothing_is_uploaded_when_the_bucket_already_has_every_id(tmp_path: Path
 def test_a_hold_still_exports_and_uploads_then_reports_failure(tmp_path: Path) -> None:
     """A `tracker delete` made by hand during a hold must still reach the bucket."""
     docker = 'case "$*" in *deletions-run*) exit 1 ;; esac'
-    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker=docker)
+    calls, uploaded = run_export_deletions(tmp_path, on_server="5\n", in_bucket=None, docker=docker)
     assert any(call.endswith("deletions-export /deletions/deleted-ids.txt") for call in calls)
     assert uploaded == "5\n"
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
@@ -259,7 +243,7 @@ def test_a_hold_still_exports_and_uploads_then_reports_failure(tmp_path: Path) -
 
 def test_a_failed_export_uploads_nothing_and_reports_failure(tmp_path: Path) -> None:
     docker = 'case "$*" in *deletions-export*) exit 1 ;; esac'
-    calls, uploaded = _run_export(tmp_path, on_server="5\n", in_bucket=None, docker=docker)
+    calls, uploaded = run_export_deletions(tmp_path, on_server="5\n", in_bucket=None, docker=docker)
     assert not any(call.startswith("rclone") for call in calls)
     assert calls[-1].endswith(f"{HEALTHCHECK_URL}/fail")
     assert uploaded == ""

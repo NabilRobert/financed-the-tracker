@@ -76,8 +76,9 @@ at once. The app login can't delete: every 15 minutes, `export_deletions.sh` run
 `tracker deletions-run` under the owner login, which calls `tracker_delete_person_in_scope`
 for each confirmed person (`deletions.py: run_confirmed_deletions`). More than two
 deletions in 24 hours looks like a taken-over app confirming for others, so it deletes
-none, fails, and the heartbeat alerts Arthur. A trigger stops the app undoing a
-confirmation. Only their id stays, in `deleted_person`, so a deletion can be
+none, fails, and the heartbeat alerts Arthur. Fewer alert too: a run that deletes anyone
+fails the heartbeat with the count, so Arthur sees every deletion. A trigger stops the app
+undoing a confirmation. Only their id stays, in `deleted_person`, so a deletion can be
 re-applied after a restore.
 
 **Everything WhatsApp-specific is behind `tracker/channel/gateway.py`.** To replace WAHA,
@@ -336,6 +337,7 @@ costs one reply. A wrong amount costs trust in every total after it.
 | Change what's kept, and for how long | `ledger/retention.py`, and PR6 in Phase 2 |
 | Delete someone without WhatsApp | `tracker delete <id> --yes`, with the owner's login |
 | Clear a deletion hold | Check each id `deletions-run` printed, then `tracker delete <id> --yes` or `tracker deletion-cancel <id>` |
+| Answer a deletion alert (`deletions_run deleted=N`) | Check that each person deleted in the last 15 minutes asked to leave; runbook section 6 says what to do if not |
 | Change how many deletions a day may bring | `MAX_DELETIONS_PER_DAY` in `ledger/deletions.py`, and ADR-023 |
 | Check the deployed version | `GET /healthz` gives `status` and `version` |
 | Add a person | `tracker add 628...`, with the owner's login |
