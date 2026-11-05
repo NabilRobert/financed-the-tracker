@@ -246,10 +246,11 @@ command.
 ### A tested restore (gate lines 4, 5 and 21)
 
 The drill is [runbook section 6](runbook-deploy.md#6-backups-and-the-restore-drill), steps
-1 to 6. It runs on your Mac, which holds the age private key, against a throwaway Postgres.
+1 to 7. It runs on your Mac, which holds the age private key, against a throwaway Postgres.
 Nothing in it touches the live database or needs WAHA.
 
 **It passes when all of these hold:**
+- `check_bucket.sh` names no overwritten dump, and merges at least one copy of the deletion list;
 - the newest dump decrypts with the new key, and streams into `pg_restore` with no errors;
 - `deletions-reapply` on the merged list exits 0. It refuses an empty list unless nobody
   has ever left;
