@@ -16,7 +16,9 @@ from limits.aio.storage import MemoryStorage
 from limits.aio.strategies import FixedWindowRateLimiter
 
 MAX_MESSAGES_PER_MINUTE: Final = 20
-MAX_MESSAGES_PER_DAY: Final = 300
+# Five invited people at 100 each fit inside the 500 shared replies, so one heavy user can't
+# silence the rest (L6). Real use is a few dozen a day.
+MAX_MESSAGES_PER_DAY: Final = 100
 MAX_LIMIT_NOTICES_PER_HOUR: Final = 1  # A refusal can't turn into a reply flood of its own.
 MAX_REPLIES_PER_MINUTE: Final = 30  # All people together. Five people typing at once stays well under this.
 MAX_REPLIES_PER_DAY: Final = 500

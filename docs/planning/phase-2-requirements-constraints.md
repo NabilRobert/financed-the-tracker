@@ -148,8 +148,9 @@ in Juku. The build goes in slices ([slice plan](slice-plan.md)).
   (500) across everyone. This replaces Meta's cap: a burst of sends is what gets a number
   banned. Past it, entries are still logged, and only the echo stops.
 - **R6.** Each person is limited to `MAX_MESSAGES_PER_MINUTE` (20) and
-  `MAX_MESSAGES_PER_DAY` (300), far above real use. Past that, messages are
-  refused with one notice an hour. Caddy limits the request body's size.
+  `MAX_MESSAGES_PER_DAY` (100), far above real use. Past that, messages are
+  refused with one notice an hour. Five people at 100 fit inside R7's 500 replies, so
+  one person can't use up everyone's (L6, Arthur, 2026-11-05). Caddy limits the request body's size.
 
 **Measurement and operations (ADR-014, ADR-015)**
 - **E1.** A labelled corpus, with a held-out set the rules are never tuned
