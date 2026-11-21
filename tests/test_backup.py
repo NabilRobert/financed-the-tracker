@@ -7,6 +7,8 @@ tests check what it runs and in what order, with no database, bucket or network.
 """
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -88,3 +90,12 @@ def test_a_failed_dump_reports_failure(tmp_path: Path) -> None:
 
 def test_whatsapps_session_files_are_not_backed_up() -> None:
     assert ".sessions" not in BACKUP_SCRIPT.replace("WAHA's session files", "")
+
+
+@pytest.mark.parametrize("settings_file", ["ops/backup.env", "ops/backup/backup.env", "backup.env"])
+def test_a_backup_settings_file_beside_the_scripts_is_never_committed(settings_file: str) -> None:
+    """It holds the S3 key and the heartbeat URLs. Nothing names its path, so any *.env is ignored."""
+    git = shutil.which("git")
+    assert git is not None
+    result = subprocess.run([git, "check-ignore", "-q", settings_file], cwd=REPO_ROOT, check=False)  # noqa: S603
+    assert result.returncode == 0
