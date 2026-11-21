@@ -15,6 +15,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Final
 
 import httpx
@@ -44,6 +45,10 @@ from tracker.ledger.engine import create_engine
 logger: Final = logging.getLogger("tracker.channel")
 
 WEBHOOK_PATH: Final = "/webhook"
+# Older than this, a signed event is a replay, not a delivery (T3). WAHA's retries finish
+# within minutes, and a bare message id, which stops repeats, is purged after 30 days, so a
+# capture replayed after that would otherwise count twice. The timestamp is in the signed body.
+MAX_EVENT_AGE: Final = timedelta(days=1)
 HEALTH_PATH: Final = "/healthz"
 MAX_BODY_BYTES: Final = 256 * 1024  # A text event is a few KB. Caddy enforces this too.
 WAHA_TIMEOUT_SECONDS: Final = 10.0
@@ -100,9 +105,15 @@ async def _dispatch(gateway: Gateway, conversation: Conversation, body: bytes) -
         return Response(status_code=400)
     if isinstance(event, ChannelStopped):
         logger.error("channel_stopped status=%s", event.status)  # Perhaps a ban: E3 alerts on this.
+    elif event is not None and is_stale(event.sent_at, datetime.now(UTC)):
+        logger.warning("webhook_stale")  # Dropped with a 200, so WAHA doesn't retry it.
     elif event is not None:
         await _reply_to(gateway, conversation, event)
     return PlainTextResponse("ok")
+
+
+def is_stale(sent_at: datetime, now: datetime) -> bool:
+    return now - sent_at > MAX_EVENT_AGE
 
 
 async def _handle_webhook(request: Request, gateway: Gateway, conversation: Conversation) -> Response:

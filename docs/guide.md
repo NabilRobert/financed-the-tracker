@@ -30,7 +30,9 @@ flowchart TD
    parsed before that, so a forged request reaches no code.
 2. **Read the event.** `tracker/channel/waha.py: read_event` turns it into an
    `IncomingMessage`, or nothing. It drops the bot's own messages, groups, broadcasts and
-   channels, so the bot can't loop or reply where others can read.
+   channels, so the bot can't loop or reply where others can read. `webhook.py: is_stale`
+   then drops a message more than a day old, which can only be a replay: its time is inside
+   the signed body.
 3. **Work out who it is.** `identify` asks WAHA for the sender's LID and phone number.
    The LID is the stable id. `@c.us` is the phone number itself.
 4. **Find the person.** `tracker/channel/conversation.py: _admit` asks the database

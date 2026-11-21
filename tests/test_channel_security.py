@@ -7,7 +7,7 @@ import hashlib
 import io
 import logging
 import stat
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -557,15 +557,19 @@ async def test_a_message_from_the_bot_itself_gets_no_reply(owner_engine: AsyncEn
 async def test_the_entry_date_is_the_day_in_jakarta_when_the_message_was_sent(
     owner_engine: AsyncEngine, bot: Bot, member: str
 ) -> None:
-    """17:00 UTC on 30 November is already 1 December in Jakarta, whatever day it is now."""
-    sent_at = int(datetime(2026, 11, 30, 17, 0, tzinfo=UTC).timestamp())
-    await bot.post(text_event(member, "makan 25rb", sent_at=sent_at))
+    """17:00 UTC is already the next day in Jakarta. The latest 17:00 UTC is used, because
+    an event more than a day old is dropped as a replay (T3)."""
+    now = datetime.now(UTC)
+    sent = now.replace(hour=17, minute=0, second=0, microsecond=0)
+    if sent > now:
+        sent -= timedelta(days=1)
+    await bot.post(text_event(member, "makan 25rb", sent_at=int(sent.timestamp())))
     async with owner_engine.connect() as connection:
         occurred_on = await connection.scalar(
             text("SELECT e.occurred_on FROM entry e JOIN person p ON p.id = e.person_id WHERE p.whatsapp_id = :i"),
             {"i": member},
         )
-    assert occurred_on == date(2026, 12, 1)
+    assert occurred_on == sent.date() + timedelta(days=1)
 
 
 # The CLI.
