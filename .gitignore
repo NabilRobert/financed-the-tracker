@@ -7,6 +7,7 @@ HANDOVER*.md
 # Secrets
 .env
 .env.*
+*.env
 !.env.example
 
 # WAHA's session files are the WhatsApp account itself.
